@@ -101,7 +101,11 @@ class ReturnNode(GenNode):
         self.val = val
 
     def gen(self, g: ICodeGenerator) -> None:
-        raise NotImplementedError()
+        self.val.gen(g)
+        g.asm("pop rax")
+        g.asm("mov rsp, rbp")
+        g.asm("pop rbp")
+        g.asm("ret")
 
     def gen_lval(self, g: ICodeGenerator) -> None:
         raise NotImplementedError()
@@ -113,12 +117,7 @@ class UnaryNode(GenNode):
         self.node = node
 
     def gen(self, g: ICodeGenerator) -> None:
-        if self.kind == NodeKind.RETURN:
-            self.node.gen(g)
-            g.asm("pop rax")
-            g.asm("mov rsp, rbp")
-            g.asm("pop rbp")
-            g.asm("ret")
+        raise NotImplementedError()
 
     def gen_lval(self, g: ICodeGenerator) -> None:
         raise NotImplementedError()
