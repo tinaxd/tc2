@@ -1,7 +1,7 @@
 from shutil import ExecError
 from typing import List, Optional
 from enum import Enum
-from abc import ABCMeta
+from abc import ABCMeta, abstractmethod
 
 import sys
 
@@ -70,6 +70,11 @@ class NodeKind(Enum):
     LVAR = 21
 
 
+class ICodeGenerator(metaclass=ABCMeta):
+    @abstractmethod
+    def asm(self, asm: str) -> None: ...
+
+
 class Node(metaclass=ABCMeta):
     def __init__(self, kind: NodeKind) -> None:
         self.kind = kind
@@ -78,29 +83,88 @@ class Node(metaclass=ABCMeta):
         return f'<Node {self.kind}>'
 
 
-class UnaryNode(Node):
+class GenNode(Node):
+    @abstractmethod
+    def gen(self, g: ICodeGenerator) -> None: ...
+    @abstractmethod
+    def gen_lval(self, g: ICodeGenerator) -> None: ...
+
+
+class ReturnNode(GenNode):
+    def __init__(self, val: Node) -> None:
+        super().__init__(NodeKind.RETURN)
+        self.val = val
+
+    def gen(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+
+class UnaryNode(GenNode):
     def __init__(self, kind: NodeKind, node: Node) -> None:
         super().__init__(kind)
         self.node = node
 
+    def gen(self, g: ICodeGenerator) -> None:
+        if self.kind == NodeKind.RETURN:
+            self.node.gen(g)
+            g.asm("pop rax")
+            g.asm("mov rsp, rbp")
+            g.asm("pop rbp")
+            g.asm("ret")
 
-class BinaryNode(Node):
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+
+class BinaryNode(GenNode):
     def __init__(self, kind: NodeKind, lhs: Node, rhs: Node) -> None:
         super().__init__(kind)
         self.lhs = lhs
         self.rhs = rhs
 
+    def gen(self, g: ICodeGenerator) -> None:
+        if self.kind == NodeKind.ASSIGN:
+            self.lhs.gen_lval()
 
-class NumNode(Node):
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+
+class NumNode(GenNode):
     def __init__(self, val: int) -> None:
         super().__init__(NodeKind.NUM)
         self.val = val
+
+    def gen(self, g: ICodeGenerator) -> None:
+        g.asm(f"push {self.val}")
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
 
 
 class LVarNode(Node):
     def __init__(self) -> None:
         super().__init__(NodeKind.LVAR)
         raise NotImplementedError()
+
+
+class BlockNode(Node):
+    def __init__(self) -> None:
+        super().__init__(NodeKind.BLOCK)
+        self.stmts: List[Node] = []
+
+    def append(self, stmt: Node) -> None:
+        self.stmts.append(stmt)
+
+
+class DefNode(Node):
+    def __init__(self, funcname: str, body: BlockNode) -> None:
+        super().__init__(NodeKind.DEF)
+        self.funcname = funcname
+        self.body = body
 
 
 def substr(s: str, start: int, count: int) -> str:
@@ -254,6 +318,50 @@ class Parser:
         val = self.current
         self.p += 1
         return val
+
+    def program(self) -> List[Node]:
+        code = []
+        while self.current.kind != TokenKind.EOF:
+            code.append(self.definition())
+        return code
+
+    def definition(self) -> Node:
+        self.expect("int")
+        ident = self.expect_ident()
+        self.expect("(")
+        params = []
+        if not self.consume(")"):
+            # params exist
+            self.expect("int")
+            id = self.expect_ident()
+            params.append(id)
+            while True:
+                if self.consume(","):
+                    self.expect("int")
+                    id1 = self.expect_ident()
+                    params.append(id1)
+                else:
+                    break
+            self.expect(")")
+
+        # TODO: register params as lvars
+
+        self.consume("{")
+        body = BlockNode()
+        while True:
+            if self.consume("}"):
+                break
+            body.append(self.stmt())
+
+        node = DefNode(ident.string, body)
+        return node
+
+    def stmt(self) -> Node:
+        if self.consume_kind(TokenKind.RETURN):
+            node = self.expr()
+            self.expect(";")
+            return ReturnNode(node)
+        raise NotImplementedError()
 
     def expr(self) -> Node:
         return self.assign()

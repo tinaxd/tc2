@@ -90,6 +90,22 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(node.lhs.lhs.val, 3)
         self.assertEqual(node.lhs.rhs.val, 4)
 
+    def test_func_main(self):
+        s = "int main() { return 0; }"
+        tokens = tokenize(s)
+        parser = Parser(tokens)
+        node = parser.program()
+        self.assertEqual(len(node), 1)
+        node = node[0]
+        self.assertEqual(node.kind, NodeKind.DEF)
+        self.assertEqual(node.funcname, "main")
+        self.assertEqual(node.body.kind, NodeKind.BLOCK)
+        self.assertEqual(len(node.body.stmts), 1)
+        stmt = node.body.stmts[0]
+        self.assertEqual(stmt.kind, NodeKind.RETURN)
+        self.assertEqual(stmt.val.kind, NodeKind.NUM)
+        self.assertEqual(stmt.val.val, 0)
+
 
 if __name__ == '__main__':
     unittest.main()
