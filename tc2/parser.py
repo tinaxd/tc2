@@ -112,6 +112,24 @@ class GenError(Exception):
         super().__init__(msg)
 
 
+class TypeKind(Enum):
+    INT = 1
+    PTR = 2
+    ARRAY = 3
+
+
+class Type:
+    def __init__(self, kind: TypeKind, ptr_to: 'Type' = None, array_size: int = 0) -> None:
+        self.kind = kind
+        self.ptr_to = ptr_to
+        self.array_size = array_size
+
+    def __eq__(self, o) -> bool:
+        if isinstance(o, Type):
+            return self.kind == o.kind and self.ptr_to == o.ptr_to and self.array_size == o.array_size
+        return False
+
+
 class Node(metaclass=ABCMeta):
     def __init__(self, kind: NodeKind) -> None:
         self.kind = kind
@@ -125,6 +143,16 @@ class GenNode(Node):
     def gen(self, g: ICodeGenerator) -> None: ...
     @abstractmethod
     def gen_lval(self, g: ICodeGenerator) -> None: ...
+
+
+class TypedNode(GenNode):
+    @abstractmethod
+    def get_type(self) -> Type: ...
+
+
+class NodeTypeError(Exception):
+    def __init__(self, msg) -> None:
+        super().__init__(msg)
 
 
 class ReturnNode(GenNode):
@@ -154,8 +182,8 @@ class EmptyNode(GenNode):
         pass
 
 
-class UnaryNode(GenNode):
-    def __init__(self, kind: NodeKind, node: Node) -> None:
+class UnaryNode(TypedNode):
+    def __init__(self, kind: NodeKind, node: TypedNode) -> None:
         super().__init__(kind)
         self.node = node
 
@@ -165,12 +193,24 @@ class UnaryNode(GenNode):
     def gen_lval(self, g: ICodeGenerator) -> None:
         raise NotImplementedError()
 
+    def get_type(self) -> Type:
+        ty = self.node.get_type()
+        if self.kind == NodeKind.DEREF:
+            return ty.ptr_to
+        elif self.kind == NodeKind.ADDR:
+            return Type(TypeKind.PTR, ty)
+        else:
+            return ty
 
-class BinaryNode(GenNode):
-    def __init__(self, kind: NodeKind, lhs: GenNode, rhs: GenNode) -> None:
+
+class BinaryNode(TypedNode):
+    def __init__(self, kind: NodeKind, lhs: TypedNode, rhs: TypedNode) -> None:
         super().__init__(kind)
         self.lhs = lhs
         self.rhs = rhs
+
+    def get_type(self) -> Type:
+        return self.lhs.get_type()
 
     def gen(self, g: ICodeGenerator) -> None:
         if self.kind == NodeKind.ASSIGN:
@@ -223,7 +263,7 @@ class BinaryNode(GenNode):
         raise NotImplementedError()
 
 
-class NumNode(GenNode):
+class NumNode(TypedNode):
     def __init__(self, val: int) -> None:
         super().__init__(NodeKind.NUM)
         self.val = val
@@ -233,6 +273,9 @@ class NumNode(GenNode):
 
     def gen_lval(self, g: ICodeGenerator) -> None:
         raise NotImplementedError()
+
+    def get_type(self) -> Type:
+        return Type(TypeKind.INT)
 
 
 class LVarNode(GenNode):
