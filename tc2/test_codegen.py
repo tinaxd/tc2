@@ -89,7 +89,7 @@ class CodeGenTest(unittest.TestCase):
         self.assertCompileExitCode('int main(){if(1) return 2; return 3;}', 2)
     
     def test_if0(self):
-        self.assertCompileExitCode('int main(){if(1) return 2; return 3;}', 3)
+        self.assertCompileExitCode('int main(){if(1) return 2; return 3;}', 2)
     
     def test_if1_then(self):
         self.assertCompileExitCode('int main(){if(1) return 2; else return 3;}', 2)

@@ -655,9 +655,9 @@ class Parser:
             if not self.consume(';'):
                 n2 = self.expr()
                 self.expect(';')
-            if not self.consume(';'):
+            if not self.consume(')'):
                 n3 = self.expr()
-                self.expect(';')
+                self.expect(')')
             n4 = self.stmt()
 
             node = ForNode(n1, n2, n3, n4)
