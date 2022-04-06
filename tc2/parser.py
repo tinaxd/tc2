@@ -323,11 +323,26 @@ class IfNode(GenNode):
         raise NotImplementedError()
 
 
-class WhileNode(Node):
+class WhileNode(GenNode):
     def __init__(self, cond: GenNode, body: GenNode) -> None:
         super().__init__(NodeKind.WHILE)
         self.cond = cond
         self.body = body
+
+    def gen(self, g: ICodeGenerator) -> None:
+        begin_label = g.generate_label()
+        end_label = g.generate_label()
+        g.asm(f'{begin_label}:')
+        self.cond.gen(g)
+        g.asm('pop rax')
+        g.asm('cmp rax, 0')
+        g.asm(f'je {end_label}')
+        self.body.gen(g)
+        g.asm(f'jmp {begin_label}')
+        g.asm(f'{end_label}:')
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
 
 
 class ForNode(Node):
