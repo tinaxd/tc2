@@ -1,5 +1,6 @@
+from dataclasses import dataclass
 from shutil import ExecError
-from typing import List, Optional
+from typing import Dict, List, Optional
 from enum import Enum
 from abc import ABCMeta, abstractmethod
 
@@ -70,9 +71,33 @@ class NodeKind(Enum):
     LVAR = 21
 
 
+@dataclass
+class LVarPlacement:
+    name: str
+    offset: int
+    size: int
+
+
+@dataclass
+class StackLayout:
+    lvars: List[LVarPlacement]
+
+
 class ICodeGenerator(metaclass=ABCMeta):
     @abstractmethod
     def asm(self, asm: str) -> None: ...
+
+    @abstractmethod
+    def get_stack_layout(self, func: str) -> StackLayout: ...
+
+    @abstractmethod
+    def get_rsp_sub(self, func: str) -> int: ...
+
+    @abstractmethod
+    def get_offset(self, varname: str) -> int: ...
+
+    @abstractmethod
+    def update_current_function(self, func: str) -> None: ...
 
 
 class GenError(Exception):
@@ -111,6 +136,17 @@ class ReturnNode(GenNode):
         raise NotImplementedError()
 
 
+class EmptyNode(GenNode):
+    def __init__(self) -> None:
+        super().__init__(NodeKind.EMPTY)
+
+    def gen(self, g: ICodeGenerator) -> None:
+        pass
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        pass
+
+
 class UnaryNode(GenNode):
     def __init__(self, kind: NodeKind, node: Node) -> None:
         super().__init__(kind)
@@ -124,12 +160,22 @@ class UnaryNode(GenNode):
 
 
 class BinaryNode(GenNode):
-    def __init__(self, kind: NodeKind, lhs: Node, rhs: Node) -> None:
+    def __init__(self, kind: NodeKind, lhs: GenNode, rhs: GenNode) -> None:
         super().__init__(kind)
         self.lhs = lhs
         self.rhs = rhs
 
     def gen(self, g: ICodeGenerator) -> None:
+        if self.kind == NodeKind.ASSIGN:
+            self.lhs.gen_lval(g)
+            self.rhs.gen(g)
+
+            g.asm('pop rdi')
+            g.asm('pop rax')
+            g.asm('mov DWORD PTR [rax], edi')
+            g.asm('push rdi')
+            return
+
         self.lhs.gen(g)
         self.rhs.gen(g)
         g.asm('pop rdi')
@@ -163,7 +209,7 @@ class BinaryNode(GenNode):
             g.asm('setne al')
             g.asm('movzb rax, al')
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(f'Kind: {self.kind}')
         g.asm('push rax')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
@@ -182,10 +228,22 @@ class NumNode(GenNode):
         raise NotImplementedError()
 
 
-class LVarNode(Node):
-    def __init__(self) -> None:
+class LVarNode(GenNode):
+    def __init__(self, lvar: 'LocalVar') -> None:
         super().__init__(NodeKind.LVAR)
-        raise NotImplementedError()
+        self.lvar = lvar
+
+    def gen(self, g: ICodeGenerator) -> None:
+        self.gen_lval(g)
+        g.asm('pop rax')
+        g.asm('mov eax, DWORD PTR [rax]')
+        g.asm('push rax')
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        g.asm('mov rax, rbp')
+        offset = g.get_offset(self.lvar.name)
+        g.asm(f'sub rax, {offset}')
+        g.asm('push rax')
 
 
 class BlockNode(GenNode):
@@ -201,7 +259,7 @@ class BlockNode(GenNode):
             if isinstance(stmt, GenNode):
                 stmt.gen(g)
             else:
-                raise GenError("Non GenNode in BlockNode")
+                raise GenError(f"Non GenNode in BlockNode: {stmt}")
 
     def gen_lval(self, g: ICodeGenerator) -> None:
         raise NotImplementedError()
@@ -214,12 +272,12 @@ class DefNode(GenNode):
         self.body = body
 
     def gen(self, g: ICodeGenerator) -> None:
+        g.update_current_function(self.funcname)
         g.asm(f'{self.funcname}:')
         g.asm('push rbp')
         g.asm('mov rbp, rsp')
 
-        offset = 0
-        # TODO: calculate offset
+        offset = g.get_rsp_sub(self.funcname)
         g.asm(f'sub rsp, {offset}')
 
         # TODO: push arguments
@@ -339,14 +397,31 @@ def tokenize(s: str) -> List[Token]:
     return tokens
 
 
+class LocalVar:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
 class Parser:
     def __init__(self, tokens: List[Token]) -> None:
         self.tokens = tokens
         self.p = 0
+        self.current_function = ""
+        self.local_vars: Dict[str, List[LocalVar]] = {}
 
     @property
     def current(self) -> Token:
         return self.tokens[self.p]
+
+    def get_local_vars(self):
+        return self.local_vars
+
+    def find_local_var_in_func(self, name: str) -> Optional[LocalVar]:
+        vars = self.local_vars[self.current_function]
+        for var in vars:
+            if var.name == name:
+                return var
+        return None
 
     def consume(self, op: str) -> bool:
         token = self.current
@@ -383,6 +458,10 @@ class Parser:
         self.p += 1
         return val
 
+    def register_local_var(self, name: str) -> None:
+        vars_in_func = self.local_vars[self.current_function]
+        vars_in_func.append(LocalVar(name))
+
     def program(self) -> List[Node]:
         code = []
         while self.current.kind != TokenKind.EOF:
@@ -392,6 +471,8 @@ class Parser:
     def definition(self) -> Node:
         self.expect("int")
         ident = self.expect_ident()
+        self.current_function = ident.string
+        self.local_vars[ident.string] = []
         self.expect("(")
         params = []
         if not self.consume(")"):
@@ -425,7 +506,29 @@ class Parser:
             node = self.expr()
             self.expect(";")
             return ReturnNode(node)
-        raise NotImplementedError()
+        elif self.consume("int"):
+            stars = 0
+            while self.consume("*"):
+                stars += 1
+            tok = self.expect_ident()
+
+            # array check
+            array_size = 0
+            is_array = False
+            if self.consume("["):
+                is_array = True
+                raise NotImplementedError()
+
+            self.expect(";")
+
+            # type construction
+            # TODO:
+            self.register_local_var(tok.string)
+            return EmptyNode()
+        else:
+            node = self.expr()
+            self.expect(";")
+            return node
 
     def expr(self) -> Node:
         return self.assign()
@@ -532,4 +635,5 @@ class Parser:
             raise NotImplementedError()
         else:
             # local variable
-            raise NotImplementedError()
+            lvar = self.find_local_var_in_func(ident.string)
+            return LVarNode(lvar)
