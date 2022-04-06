@@ -47,3 +47,9 @@ class CodeGenTest(unittest.TestCase):
 
     def test_main_paren_expr(self):
         self.assertCompileExitCode('int main() {return 5*(9-6);}', 15)
+
+    def test_main_comp_lt(self):
+        self.assertCompileExitCode('int main(){return 1<2;}', 1)
+
+    def test_main_comp_gte(self):
+        self.assertCompileExitCode('int main(){return 1>=2;}', 0)
