@@ -14,6 +14,7 @@ class StringGenerator(ICodeGenerator):
         self.buf = []
         self.lvars = lvars
         self.current_function = ""
+        self.label_num = 0
 
     def update_lvars(self, lvars: Dict[str, List[LocalVar]]) -> None:
         self.lvars = lvars
@@ -49,6 +50,11 @@ class StringGenerator(ICodeGenerator):
 
     def as_str(self) -> str:
         return os.linesep.join(self.buf)
+
+    def generate_label(self) -> str:
+        s = f'.L{self.label_num}'
+        self.label_num += 1
+        return s
 
 
 def gen_all(gen: ICodeGenerator, nodes: List[GenNode]) -> None:

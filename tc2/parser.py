@@ -99,6 +99,9 @@ class ICodeGenerator(metaclass=ABCMeta):
     @abstractmethod
     def update_current_function(self, func: str) -> None: ...
 
+    @abstractmethod
+    def generate_label(self) -> str: ...
+
 
 class GenError(Exception):
     def __init__(self, msg: str) -> None:
@@ -287,6 +290,53 @@ class DefNode(GenNode):
 
     def gen_lval(self, g: ICodeGenerator) -> None:
         raise NotImplementedError()
+
+
+class IfNode(GenNode):
+    def __init__(self, cond: GenNode, then: GenNode, els: Optional[GenNode] = None) -> None:
+        super().__init__(NodeKind.IF)
+        self.cond = cond
+        self.then = then
+        self.els = els
+
+    def gen(self, g: ICodeGenerator) -> None:
+        self.cond.gen(g)
+        g.asm('pop rax')
+        g.asm('cmp rax, 0')
+        end_label = g.generate_label()
+        if self.els is None:
+            # without else clause
+            g.asm(f'je {end_label}')
+            self.then.gen(g)
+            g.asm(f'{end_label}:')
+        else:
+            # with else clause
+            else_label = g.generate_label()
+            g.asm(f'je {else_label}')
+            self.then.gen(g)
+            g.asm(f'jmp {end_label}')
+            g.asm(f'{else_label}:')
+            self.els.gen(g)
+            g.asm(f'{end_label}:')
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+
+class WhileNode(Node):
+    def __init__(self, cond: GenNode, body: GenNode) -> None:
+        super().__init__(NodeKind.WHILE)
+        self.cond = cond
+        self.body = body
+
+
+class ForNode(Node):
+    def __init__(self, init: Optional[GenNode], cond: Optional[GenNode], step: Optional[GenNode], body: GenNode) -> None:
+        super().__init__(NodeKind.FOR)
+        self.init = init
+        self.cond = cond
+        self.step = step
+        self.body = body
 
 
 def substr(s: str, start: int, count: int) -> str:
@@ -525,6 +575,45 @@ class Parser:
             # TODO:
             self.register_local_var(tok.string)
             return EmptyNode()
+        elif self.consume_kind(TokenKind.IF):
+            self.expect('(')
+            n1 = self.expr()
+            self.expect(')')
+            n2 = self.stmt()
+
+            # else clause
+            n3 = None
+            if self.consume_kind(TokenKind.ELSE):
+                n3 = self.stmt()
+
+            node = IfNode(n1, n2, n3)
+            return node
+        elif self.consume_kind(TokenKind.WHILE):
+            self.expect('(')
+            n1 = self.expr()
+            self.expect(')')
+            n2 = self.stmt()
+
+            node = WhileNode(n1, n2)
+            return node
+        elif self.consume_kind(TokenKind.FOR):
+            self.expect('(')
+            n1 = None
+            n2 = None
+            n3 = None
+            if not self.consume(';'):
+                n1 = self.expr()
+                self.expect(';')
+            if not self.consume(';'):
+                n2 = self.expr()
+                self.expect(';')
+            if not self.consume(';'):
+                n3 = self.expr()
+                self.expect(';')
+            n4 = self.stmt()
+
+            node = ForNode(n1, n2, n3, n4)
+            return node
         else:
             node = self.expr()
             self.expect(";")
