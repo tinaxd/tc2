@@ -1,15 +1,19 @@
 from dataclasses import dataclass
 from shutil import ExecError
-from typing import Dict, List, Optional
+from typing import Dict, List, NoReturn, Optional
 from enum import Enum
 from abc import ABCMeta, abstractmethod
 
 import sys
 
 
-def error_at(tokstr: str, msg: str) -> None:
-    print(tokstr, msg)
-    sys.exit(1)
+class ParserError(Exception):
+    def __init__(self, msg: str) -> None:
+        super().__init__(msg)
+
+
+def error_at(tokstr: str, msg: str) -> NoReturn:
+    raise ParserError(f'{tokstr} {msg}')
 
 
 class TokenKind(Enum):
@@ -345,13 +349,42 @@ class WhileNode(GenNode):
         raise NotImplementedError()
 
 
-class ForNode(Node):
+class ForNode(GenNode):
     def __init__(self, init: Optional[GenNode], cond: Optional[GenNode], step: Optional[GenNode], body: GenNode) -> None:
         super().__init__(NodeKind.FOR)
         self.init = init
         self.cond = cond
         self.step = step
         self.body = body
+
+    def gen(self, g: ICodeGenerator) -> None:
+        begin_label = g.generate_label()
+        end_label = g.generate_label()
+        if self.init is not None:
+            self.init.gen(g)
+        g.asm(f'{begin_label}:')
+
+        if self.cond is not None:
+            self.cond.gen(g)
+        else:
+            # no cond (always 1)
+            g.asm('mov rax, 1')
+            g.asm('push rax')
+        g.asm('pop rax')
+        g.asm('cmp rax, 0')
+        g.asm(f'je {end_label}')
+
+        self.body.gen(g)
+
+        if self.step is not None:
+            self.step.gen(g)
+            g.asm('pop rax')
+
+        g.asm(f'jmp {begin_label}')
+        g.asm(f'{end_label}:')
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
 
 
 def substr(s: str, start: int, count: int) -> str:
