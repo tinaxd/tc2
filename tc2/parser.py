@@ -75,6 +75,11 @@ class ICodeGenerator(metaclass=ABCMeta):
     def asm(self, asm: str) -> None: ...
 
 
+class GenError(Exception):
+    def __init__(self, msg: str) -> None:
+        super().__init__(msg)
+
+
 class Node(metaclass=ABCMeta):
     def __init__(self, kind: NodeKind) -> None:
         self.kind = kind
@@ -151,7 +156,7 @@ class LVarNode(Node):
         raise NotImplementedError()
 
 
-class BlockNode(Node):
+class BlockNode(GenNode):
     def __init__(self) -> None:
         super().__init__(NodeKind.BLOCK)
         self.stmts: List[Node] = []
@@ -159,12 +164,39 @@ class BlockNode(Node):
     def append(self, stmt: Node) -> None:
         self.stmts.append(stmt)
 
+    def gen(self, g: ICodeGenerator) -> None:
+        for stmt in self.stmts:
+            if isinstance(stmt, GenNode):
+                stmt.gen(g)
+            else:
+                raise GenError("Non GenNode in BlockNode")
 
-class DefNode(Node):
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+
+class DefNode(GenNode):
     def __init__(self, funcname: str, body: BlockNode) -> None:
         super().__init__(NodeKind.DEF)
         self.funcname = funcname
         self.body = body
+
+    def gen(self, g: ICodeGenerator) -> None:
+        g.asm(f'{self.funcname}:')
+        g.asm('push rbp')
+        g.asm('mov rbp, rsp')
+
+        offset = 0
+        # TODO: calculate offset
+        g.asm(f'sub rsp, {offset}')
+
+        # TODO: push arguments
+
+        self.body.gen(g)
+        g.asm('pop rax')
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
 
 
 def substr(s: str, start: int, count: int) -> str:
