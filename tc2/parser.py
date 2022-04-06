@@ -1,3 +1,4 @@
+from ctypes import cast
 from dataclasses import dataclass
 from shutil import ExecError
 from typing import Dict, List, NoReturn, Optional
@@ -156,7 +157,7 @@ class NodeTypeError(Exception):
 
 
 class ReturnNode(GenNode):
-    def __init__(self, val: Node) -> None:
+    def __init__(self, val: GenNode) -> None:
         super().__init__(NodeKind.RETURN)
         self.val = val
 
@@ -196,7 +197,7 @@ class UnaryNode(TypedNode):
     def get_type(self) -> Type:
         ty = self.node.get_type()
         if self.kind == NodeKind.DEREF:
-            return ty.ptr_to
+            return ty.ptr_to  # type: ignore
         elif self.kind == NodeKind.ADDR:
             return Type(TypeKind.PTR, ty)
         else:
@@ -278,10 +279,13 @@ class NumNode(TypedNode):
         return Type(TypeKind.INT)
 
 
-class LVarNode(GenNode):
+class LVarNode(TypedNode):
     def __init__(self, lvar: 'LocalVar') -> None:
         super().__init__(NodeKind.LVAR)
         self.lvar = lvar
+
+    def get_type(self) -> Type:
+        return self.lvar.ty
 
     def gen(self, g: ICodeGenerator) -> None:
         self.gen_lval(g)
@@ -539,8 +543,9 @@ def tokenize(s: str) -> List[Token]:
 
 
 class LocalVar:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, ty: Type) -> None:
         self.name = name
+        self.ty = ty
 
 
 class Parser:
@@ -599,9 +604,9 @@ class Parser:
         self.p += 1
         return val
 
-    def register_local_var(self, name: str) -> None:
+    def register_local_var(self, name: str, ty: Type) -> None:
         vars_in_func = self.local_vars[self.current_function]
-        vars_in_func.append(LocalVar(name))
+        vars_in_func.append(LocalVar(name, ty))
 
     def program(self) -> List[Node]:
         code = []
@@ -642,7 +647,7 @@ class Parser:
         node = DefNode(ident.string, body)
         return node
 
-    def stmt(self) -> Node:
+    def stmt(self) -> GenNode:
         if self.consume_kind(TokenKind.RETURN):
             node = self.expr()
             self.expect(";")
@@ -664,7 +669,7 @@ class Parser:
 
             # type construction
             # TODO:
-            self.register_local_var(tok.string)
+            self.register_local_var(tok.string, Type(TypeKind.INT))
             return EmptyNode()
         elif self.consume_kind(TokenKind.IF):
             self.expect('(')
@@ -677,16 +682,16 @@ class Parser:
             if self.consume_kind(TokenKind.ELSE):
                 n3 = self.stmt()
 
-            node = IfNode(n1, n2, n3)
-            return node
+            n = IfNode(n1, n2, n3)
+            return n
         elif self.consume_kind(TokenKind.WHILE):
             self.expect('(')
             n1 = self.expr()
             self.expect(')')
             n2 = self.stmt()
 
-            node = WhileNode(n1, n2)
-            return node
+            nw = WhileNode(n1, n2)
+            return nw
         elif self.consume_kind(TokenKind.FOR):
             self.expect('(')
             n1 = None
@@ -703,23 +708,23 @@ class Parser:
                 self.expect(')')
             n4 = self.stmt()
 
-            node = ForNode(n1, n2, n3, n4)
-            return node
+            nf = ForNode(n1, n2, n3, n4)
+            return nf
         else:
             node = self.expr()
             self.expect(";")
             return node
 
-    def expr(self) -> Node:
+    def expr(self) -> TypedNode:
         return self.assign()
 
-    def assign(self) -> Node:
+    def assign(self) -> TypedNode:
         node = self.equality()
         if self.consume("="):
             node = BinaryNode(NodeKind.ASSIGN, node, self.assign())
         return node
 
-    def equality(self) -> Node:
+    def equality(self) -> TypedNode:
         node = self.relational()
         while True:
             if self.consume("=="):
@@ -730,7 +735,7 @@ class Parser:
                 break
         return node
 
-    def relational(self) -> Node:
+    def relational(self) -> TypedNode:
         node = self.add()
         while True:
             if self.consume("<"):
@@ -749,7 +754,7 @@ class Parser:
                 break
         return node
 
-    def add(self) -> Node:
+    def add(self) -> TypedNode:
         node = self.mul()
         while True:
             if self.consume("+"):
@@ -762,7 +767,7 @@ class Parser:
                 break
         return node
 
-    def mul(self) -> Node:
+    def mul(self) -> TypedNode:
         node = self.unary()
         while True:
             if self.consume("*"):
@@ -773,7 +778,7 @@ class Parser:
                 break
         return node
 
-    def unary(self) -> Node:
+    def unary(self) -> TypedNode:
         if self.consume("+"):
             return self.subscript()
         if self.consume("-"):
@@ -787,7 +792,7 @@ class Parser:
             raise NotImplementedError()
         return self.subscript()
 
-    def subscript(self) -> Node:
+    def subscript(self) -> TypedNode:
         p = self.primary()
         if self.consume("["):
             index = self.expr()
@@ -797,7 +802,7 @@ class Parser:
             return deref
         return p
 
-    def primary(self) -> Node:
+    def primary(self) -> TypedNode:
         # paren expr
         if self.consume("("):
             node = self.expr()
@@ -816,4 +821,7 @@ class Parser:
         else:
             # local variable
             lvar = self.find_local_var_in_func(ident.string)
+            if lvar is None:
+                raise ParserError(
+                    f"local variable {ident.string} is not defined.")
             return LVarNode(lvar)
