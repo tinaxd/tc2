@@ -1,3 +1,4 @@
+import os
 import subprocess
 from typing import List
 import unittest
@@ -9,6 +10,10 @@ from tc2.parser import Node, Parser, tokenize
 class CodeGenTest(unittest.TestCase):
     def setUp(self) -> None:
         self.gen = StringGenerator()
+
+    def tearDown(self) -> None:
+        os.remove('tmp')
+        os.remove('tmp.s')
 
     def parse(self, source: str) -> List[Node]:
         tokens = tokenize(source)
@@ -26,10 +31,19 @@ class CodeGenTest(unittest.TestCase):
         proc = subprocess.run(['cc', '-o', 'tmp', 'tmp.s'])
         if proc.returncode == 0:
             exe = subprocess.run(['./tmp'])
-            self.assertEqual(exe.returncode, exit_code)
+            self.assertEqual(exe.returncode, exit_code, msg=asm)
         else:
             self.fail('failed to link generated assembly')
 
-    def test_main_0(self):
-        asm = self.compile('int main() { return 42;}')
-        self.assertExitCode(asm, 42)
+    def assertCompileExitCode(self, source: str, exit_code: int) -> None:
+        asm = self.compile(source)
+        self.assertExitCode(asm, exit_code)
+
+    def test_main_simple(self):
+        self.assertCompileExitCode('int main() { return 42;}', 42)
+
+    def test_main_expr(self):
+        self.assertCompileExitCode('int main() {return 5+6*7;}', 47)
+
+    def test_main_paren_expr(self):
+        self.assertCompileExitCode('int main() {return 5*(9-6);}', 15)

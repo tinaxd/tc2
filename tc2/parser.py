@@ -130,8 +130,41 @@ class BinaryNode(GenNode):
         self.rhs = rhs
 
     def gen(self, g: ICodeGenerator) -> None:
-        if self.kind == NodeKind.ASSIGN:
-            self.lhs.gen_lval()
+        self.lhs.gen(g)
+        self.rhs.gen(g)
+        g.asm('pop rdi')
+        g.asm('pop rax')
+        if self.kind == NodeKind.ADD:
+            g.asm('add rax, rdi')
+        elif self.kind == NodeKind.SUB:
+            g.asm('sub rax, rdi')
+        elif self.kind == NodeKind.MUL:
+            g.asm('imul rax, rdi')
+        elif self.kind == NodeKind.DIV:
+            g.asm('cqo')
+            g.asm('idiv rdi')
+        elif self.kind == NodeKind.LT:
+            g.asm('cmp rax, rdi')
+            g.asm('setl al')
+            g.asm('movzb rax, al')
+        elif self.kind == NodeKind.LE:
+            g.asm('cmp rax, rdi')
+            g.asm('setle al')
+            g.asm('movzb rax, al')
+            g.asm('cmp rax, rdi')
+            g.asm('sete al')
+            g.asm('movzb rax, al')
+        elif self.kind == NodeKind.EQ:
+            g.asm('cmp rax, rdi')
+            g.asm('sete al')
+            g.asm('movzb rax, al')
+        elif self.kind == NodeKind.NEQ:
+            g.asm('cmp rax, rdi')
+            g.asm('setne al')
+            g.asm('movzb rax, al')
+        else:
+            raise NotImplementedError()
+        g.asm('push rax')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
         raise NotImplementedError()
