@@ -1,6 +1,14 @@
 from shutil import ExecError
-from typing import List
+from typing import List, Optional
 from enum import Enum
+from abc import ABCMeta
+
+import sys
+
+
+def error_at(tokstr: str, msg: str) -> None:
+    print(tokstr, msg)
+    sys.exit(1)
 
 
 class TokenKind(Enum):
@@ -39,27 +47,60 @@ class TokenizeError(Exception):
 
 
 class NodeKind(Enum):
-    ND_ADD = 1
-    ND_SUB = 2
-    ND_MUL = 3
-    ND_DIV = 4
-    ND_LT = 5
-    ND_LE = 6
-    ND_EQ = 7
-    ND_NEQ = 8
-    ND_ASSIGN = 9
-    ND_NUM = 10
-    ND_RETURN = 11
-    ND_IF = 12
-    ND_WHILE = 13
-    ND_FOR = 14
-    ND_BLOCK = 15
-    ND_CALL = 16
-    ND_DEF = 17
-    ND_DEREF = 18
-    ND_ADDR = 19
-    ND_EMPTY = 20
-    ND_LVAR = 21
+    ADD = 1
+    SUB = 2
+    MUL = 3
+    DIV = 4
+    LT = 5
+    LE = 6
+    EQ = 7
+    NEQ = 8
+    ASSIGN = 9
+    NUM = 10
+    RETURN = 11
+    IF = 12
+    WHILE = 13
+    FOR = 14
+    BLOCK = 15
+    CALL = 16
+    DEF = 17
+    DEREF = 18
+    ADDR = 19
+    EMPTY = 20
+    LVAR = 21
+
+
+class Node(metaclass=ABCMeta):
+    def __init__(self, kind: NodeKind) -> None:
+        self.kind = kind
+
+    def __str__(self) -> str:
+        return f'<Node {self.kind}>'
+
+
+class UnaryNode(Node):
+    def __init__(self, kind: NodeKind, node: Node) -> None:
+        super().__init__(kind)
+        self.node = node
+
+
+class BinaryNode(Node):
+    def __init__(self, kind: NodeKind, lhs: Node, rhs: Node) -> None:
+        super().__init__(kind)
+        self.lhs = lhs
+        self.rhs = rhs
+
+
+class NumNode(Node):
+    def __init__(self, val: int) -> None:
+        super().__init__(NodeKind.NUM)
+        self.val = val
+
+
+class LVarNode(Node):
+    def __init__(self) -> None:
+        super().__init__(NodeKind.LVAR)
+        raise NotImplementedError()
 
 
 def substr(s: str, start: int, count: int) -> str:
@@ -165,4 +206,158 @@ def tokenize(s: str) -> List[Token]:
 
         err = s[:p] + "^" + s[p:]
         raise TokenizeError(f'cannot tokenize: {err}')
+
+    new_token(Token(TokenKind.EOF, ""))
     return tokens
+
+
+class Parser:
+    def __init__(self, tokens: List[Token]) -> None:
+        self.tokens = tokens
+        self.p = 0
+
+    @property
+    def current(self) -> Token:
+        return self.tokens[self.p]
+
+    def consume(self, op: str) -> bool:
+        token = self.current
+        if token.kind != TokenKind.RESERVED or token.string != op:
+            return False
+        self.p += 1
+        return True
+
+    def consume_kind(self, kind: TokenKind) -> bool:
+        token = self.current
+        if token.kind != kind:
+            return False
+        self.p += 1
+        return True
+
+    def consume_number(self) -> Optional[int]:
+        if self.current.kind != TokenKind.NUM:
+            return None
+        val = self.current.val
+        self.p += 1
+        return val
+
+    def expect(self, op: str) -> None:
+        token = self.current
+        if token.kind != TokenKind.RESERVED or token.string != op:
+            error_at(token.string, f"not {op}")
+        self.p += 1
+
+    def expect_ident(self) -> Token:
+        if self.current.kind != TokenKind.IDENT:
+            error_at(self.current.string,
+                     f"not an ident {self.current.string}")
+        val = self.current
+        self.p += 1
+        return val
+
+    def expr(self) -> Node:
+        return self.assign()
+
+    def assign(self) -> Node:
+        node = self.equality()
+        if self.consume("="):
+            node = BinaryNode(NodeKind.ASSIGN, node, self.assign())
+        return node
+
+    def equality(self) -> Node:
+        node = self.relational()
+        while True:
+            if self.consume("=="):
+                node = BinaryNode(NodeKind.EQ, node, self.relational())
+            elif self.consume("!="):
+                node = BinaryNode(NodeKind.NEQ, node, self.relational())
+            else:
+                break
+        return node
+
+    def relational(self) -> Node:
+        node = self.add()
+        while True:
+            if self.consume("<"):
+                node = BinaryNode(NodeKind.LT, node, self.add())
+            elif self.consume("<="):
+                node = BinaryNode(NodeKind.LE, node, self.add())
+            elif self.consume(">"):
+                node = BinaryNode(NodeKind.LT, self.add(), node)
+            elif self.consume(">="):
+                node = BinaryNode(NodeKind.LE, self.add(), node)
+            elif self.consume("=="):
+                node = BinaryNode(NodeKind.EQ, node, self.add())
+            elif self.consume("!="):
+                node = BinaryNode(NodeKind.NEQ, node, self.add())
+            else:
+                break
+        return node
+
+    def add(self) -> Node:
+        node = self.mul()
+        while True:
+            if self.consume("+"):
+                m = self.mul()
+                node = BinaryNode(NodeKind.ADD, node, m)
+            elif self.consume("-"):
+                m = self.mul()
+                node = BinaryNode(NodeKind.SUB, node, m)
+            else:
+                break
+        return node
+
+    def mul(self) -> Node:
+        node = self.unary()
+        while True:
+            if self.consume("*"):
+                node = BinaryNode(NodeKind.MUL, node, self.unary())
+            elif self.consume("/"):
+                node = BinaryNode(NodeKind.DIV, node, self.unary())
+            else:
+                break
+        return node
+
+    def unary(self) -> Node:
+        if self.consume("+"):
+            return self.subscript()
+        if self.consume("-"):
+            p = self.subscript()
+            return BinaryNode(NodeKind.SUB, NumNode(0), p)
+        if self.consume("*"):
+            return UnaryNode(NodeKind.DEREF, self.unary())
+        if self.consume("&"):
+            return UnaryNode(NodeKind.ADDR, self.unary())
+        if self.consume("sizeof"):
+            raise NotImplementedError()
+        return self.subscript()
+
+    def subscript(self) -> Node:
+        p = self.primary()
+        if self.consume("["):
+            index = self.expr()
+            self.expect("]")
+            add = BinaryNode(NodeKind.ADD, p, index)
+            deref = UnaryNode(NodeKind.DEREF, add)
+            return deref
+        return p
+
+    def primary(self) -> Node:
+        # paren expr
+        if self.consume("("):
+            node = self.expr()
+            self.expect(")")
+            return node
+
+        # integer literal
+        num = self.consume_number()
+        if num is not None:
+            return NumNode(num)
+
+        ident = self.expect_ident()
+        if self.consume("("):
+            # function call
+            raise NotImplementedError()
+        else:
+            # local variable
+            raise NotImplementedError()
