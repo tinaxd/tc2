@@ -211,6 +211,7 @@ class BinaryNode(TypedNode):
         self.rhs = rhs
 
     def get_type(self) -> Type:
+        # FIXME
         return self.lhs.get_type()
 
     def gen(self, g: ICodeGenerator) -> None:
