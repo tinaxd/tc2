@@ -459,6 +459,13 @@ class ForNode(GenNode):
         raise NotImplementedError()
 
 
+class FunCallNode(GenNode):
+    def __init__(self, funcname: str, arguments: List[GenNode]) -> None:
+        super().__init__(NodeKind.CALL)
+        self.funcname = funcname
+        self.arguments = arguments
+
+
 def substr(s: str, start: int, count: int) -> str:
     return s[start:start+count]
 
@@ -855,7 +862,13 @@ class Parser:
         ident = self.expect_ident()
         if self.consume("("):
             # function call
-            raise NotImplementedError()
+            arguments = []
+            if not self.consume(")"):
+                arguments.append(self.expr())
+                while self.consume(","):
+                    arguments.append(self.expr())
+            return FunCallNode(ident.string, arguments)
+
         else:
             # local variable
             lvar = self.find_local_var_in_func(ident.string)

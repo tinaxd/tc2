@@ -214,3 +214,39 @@ class CodeGenTest(unittest.TestCase):
     def test_ref4(self):
         self.assertCompileExitCode(
             "int main() {int *p; alloc4(&p, 1, 2, 4, 8); int *q; q = p+2; *q; q=q+1; return *q;}", 8, libraries=['library'])
+
+    def test_fundef(self):
+        self.assertCompileExitCode(
+            "int foo() {return 0;} int main() {return 1;} int bar() {return 2;}", 1)
+
+    def test_fundef1(self):
+        self.assertCompileExitCode(
+            "int three() {return 3;} int main() {int a; a= three(); return a;}", 3)
+
+    def test_fundef2(self):
+        self.assertCompileExitCode(
+            "int three() {return 3;} int main() {return three();}", 3)
+
+    def test_fundef3(self):
+        self.assertCompileExitCode(
+            "int add(int a, int b) {return a+b;} int main() {return add(2, 3);}", 5)
+
+    def test_fundef4(self):
+        self.assertCompileExitCode(
+            "int three() {return 3;} int two() {return 2;} int main() {return two()+three();}", 5)
+
+    def test_fundef5(self):
+        self.assertCompileExitCode(
+            "int add(int a, int b) {return a+b;} int main() {return add(2, add(2,1));}", 5)
+
+    def test_fundef6(self):
+        self.assertCompileExitCode(
+            "int add(int a, int b) {return a+b;} int sub(int c, int d) {return c-d;} int main() {return add(2, sub(5, 2));}", 5)
+
+    def test_fundef7(self):
+        self.assertCompileExitCode(
+            "int add(int a, int b) {return a+b;} int sub(int a, int b) {return a-b;} int main() {return add(2, sub(5, 2));}", 5)
+
+    def test_fundef_recursive(self):
+        self.assertCompileExitCode(
+            "int fibo(int x) { if(x==0) return 0; if(x==1) return 1; return fibo(x-1)+fibo(x-2);} int main(){return fibo(10);}", 55)
