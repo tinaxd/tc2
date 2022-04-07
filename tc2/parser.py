@@ -130,6 +130,16 @@ class Type:
             return self.kind == o.kind and self.ptr_to == o.ptr_to and self.array_size == o.array_size
         return False
 
+    def clone(self) -> 'Type':
+        t = Type(self.kind, self.ptr_to, self.array_size)
+        return t
+
+    def as_ptr(self) -> 'Type':
+        assert self.kind == TypeKind.ARRAY
+        t = self.clone()
+        t.kind = TypeKind.PTR
+        return t
+
 
 class Node(metaclass=ABCMeta):
     def __init__(self, kind: NodeKind) -> None:
@@ -224,12 +234,14 @@ class BinaryNode(TypedNode):
     def get_type(self) -> Type:
         addition = self.kind in [NodeKind.ADD, NodeKind.SUB]
         if addition:
-            lhs_ptr = self.lhs.get_type().kind == TypeKind.PTR
-            rhs_ptr = self.rhs.get_type().kind == TypeKind.PTR
+            lhs_ptr = self.lhs.get_type().kind in [
+                TypeKind.PTR, TypeKind.ARRAY]
+            rhs_ptr = self.rhs.get_type().kind in [
+                TypeKind.PTR, TypeKind.ARRAY]
             if lhs_ptr and not rhs_ptr:
-                return self.lhs.get_type()
+                return self.lhs.get_type().as_ptr()
             elif rhs_ptr and not lhs_ptr:
-                return self.rhs.get_type()
+                return self.rhs.get_type().as_ptr()
             elif lhs_ptr and rhs_ptr:
                 raise NodeTypeError('invalid arithmetic: pointer + pointer')
             else:
@@ -265,8 +277,10 @@ class BinaryNode(TypedNode):
         # pointer arithmetic
         def _pointer_check():
             if self.kind in [NodeKind.ADD, NodeKind.SUB]:
-                lhs_ptr = self.lhs.get_type().kind == TypeKind.PTR
-                rhs_ptr = self.rhs.get_type().kind == TypeKind.PTR
+                lhs_ptr = self.lhs.get_type().kind in [
+                    TypeKind.PTR, TypeKind.ARRAY]
+                rhs_ptr = self.rhs.get_type().kind in [
+                    TypeKind.PTR, TypeKind.ARRAY]
                 if not lhs_ptr and not rhs_ptr:
                     return
                 if lhs_ptr and not rhs_ptr:
@@ -352,6 +366,9 @@ class LVarNode(TypedNode):
             g.asm('mov eax, DWORD PTR [rax]')
         elif ty.kind == TypeKind.PTR:
             g.asm('mov rax, QWORD PTR [rax]')
+        elif ty.kind == TypeKind.ARRAY:
+            # nothing to do
+            pass
         else:
             raise NotImplementedError()
 

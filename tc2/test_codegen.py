@@ -250,3 +250,82 @@ class CodeGenTest(unittest.TestCase):
     def test_fundef_recursive(self):
         self.assertCompileExitCode(
             "int fibo(int x) { if(x==0) return 0; if(x==1) return 1; return fibo(x-1)+fibo(x-2);} int main(){return fibo(10);}", 55)
+
+    def test_array1(self):
+        self.assertCompileExitCode("int main() {int a[10]; return 0;}", 0)
+
+    def test_array2(self):
+        self.assertCompileExitCode(
+            "int main() {int a[1]; *a=2; return *a+1; }", 3)
+
+    def test_array3(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *a=3; return *a+1; }", 4)
+
+    def test_array4(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *(a+1)=4; return *(a+1)+1; }", 5)
+
+    def test_array5(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *(a+1)=4; *a=3; return *(a+1)+1; }", 5)
+
+    def test_array6(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *a=4; *(a+1)=3; return (*a)+1; }", 5)
+
+    def test_array7(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *a=1; *(a+1)=2; return *a + *(a+1); }", 3)
+
+    def test_array8(self):
+        self.assertCompileExitCode(
+            "int main() {int a[10]; int i; for(i=0; i<10; i=i+1) {*(a+i)=i;} return 0;}", 0)
+
+    def test_array9(self):
+        self.assertCompileExitCode(
+            "int main() {int a[10]; int i; for(i=0; i<10; i=i+1) {*(a+i)=i;} int sum; sum=0;for(i=0; i<10; i=i+1) sum = sum+ (*(a+i)); return sum;}", 45)
+
+    def test_array10(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; a[1]=4; return a[1]+1; }", 5)
+
+    def test_array11(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; a[0]=4; a[1]=3; return a[0]+1; }", 5)
+
+    def test_array12(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; a[0]=1; a[1]=2; return a[0] + a[1]; }", 3)
+
+    def test_array13(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *(1+a)=4; return *(1+a)+1; }", 5)
+
+    def test_array14(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *(1+a)=4; *a=3; return *(1+a)+1; }", 5)
+
+    def test_array15(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *a=4; *(1+a)=3; return (*a)+1; }", 5)
+
+    def test_array16(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; *a=1; *(1+a)=2; return *a + *(1+a); }", 3)
+
+    def test_array17(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; 1[a]=4; return 1[a]+1; }", 5)
+
+    def test_array18(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; 1[a]=4; 0[a]=3; return 1[a]+1; }", 5)
+
+    def test_array19(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; 0[a]=4; 1[a]=3; return 0[a]+1; }", 5)
+
+    def test_array20(self):
+        self.assertCompileExitCode(
+            "int main() {int a[2]; 0[a]=1; 1[a]=2; return 0[a] + 1[a]; }", 3)

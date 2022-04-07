@@ -25,6 +25,18 @@ class StringGenerator(ICodeGenerator):
         elif ty.kind == TypeKind.INT:
             return 4
         elif ty.kind == TypeKind.ARRAY:
+            return ty.array_size * self._get_type_size(ty.ptr_to)
+        else:
+            raise NotImplementedError()
+
+    def _get_alignment(self, ty: 'Type') -> int:
+        if ty.kind == TypeKind.PTR:
+            return 8
+        elif ty.kind == TypeKind.INT:
+            return 4
+        elif ty.kind == TypeKind.ARRAY:
+            return self._get_alignment(ty.ptr_to)
+        else:
             raise NotImplementedError()
 
     def update_lvars(self, lvars: Dict[str, List[LocalVar]]) -> None:
@@ -42,9 +54,10 @@ class StringGenerator(ICodeGenerator):
         places = []
         for var in vars:
             size = self._get_type_size(var.ty)
+            mod = self._get_alignment(var.ty)
             offset += size
-            if offset % size != 0:
-                padding = size - (offset % size)
+            if offset % mod != 0:
+                padding = mod - (offset % mod)
                 offset += padding
             place = LVarPlacement(var.name, offset, size)
             places.append(place)
