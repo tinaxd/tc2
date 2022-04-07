@@ -5,6 +5,8 @@ from abc import ABCMeta, abstractmethod
 
 import sys
 
+from numpy import isin
+
 
 class ParserError(Exception):
     def __init__(self, msg: str) -> None:
@@ -407,6 +409,33 @@ class BlockNode(GenNode):
         raise NotImplementedError()
 
 
+class BlockExprNode(TypedNode):
+    def __init__(self) -> None:
+        super().__init__(NodeKind.BLOCK)
+        self.stmts: List[Node] = []
+
+    def append(self, stmt: Node) -> None:
+        self.stmts.append(stmt)
+
+    def gen(self, g: ICodeGenerator) -> None:
+        for stmt in self.stmts:
+            if isinstance(stmt, GenNode):
+                stmt.gen(g)
+            else:
+                raise GenError(f"Non GenNode in BlockNode: {stmt}")
+        # last node is always expr node
+        g.asm('pop rax')
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+    def get_type(self) -> Type:
+        last = self.stmts[-1]
+        if not isinstance(last, TypedNode):
+            raise GenError('last node it not a TypedNode')
+        return last.get_type()
+
+
 class DefNode(GenNode):
     def __init__(self, funcname: str, params: List['FunParameter'], body: BlockNode) -> None:
         super().__init__(NodeKind.DEF)
@@ -736,6 +765,13 @@ class Parser:
         self.current_function = ""
         self.local_vars: Dict[str, List[LocalVar]] = {}
 
+        self._random_lvar_counter = 0
+
+    def _generate_lvar(self, ty: Type) -> LocalVar:
+        name = f'#TMP#{self._random_lvar_counter}'
+        self._random_lvar_counter += 1
+        return LocalVar(name, ty)
+
     @property
     def current(self) -> Token:
         return self.tokens[self.p]
@@ -803,6 +839,10 @@ class Parser:
     def register_local_var(self, name: str, ty: Type) -> None:
         vars_in_func = self.local_vars[self.current_function]
         vars_in_func.append(LocalVar(name, ty))
+
+    def register_local_var_direct(self, lvar: LocalVar) -> None:
+        vars_in_func = self.local_vars[self.current_function]
+        vars_in_func.append(lvar)
 
     def program(self) -> List[Node]:
         code = []
@@ -1053,7 +1093,20 @@ class Parser:
                 while self.consume(","):
                     arguments.append(self.expr())
                 self.consume(")")
-            return FunCallNode(ident.string, arguments)
+            call = FunCallNode(ident.string, arguments)
+
+            lvar = self._generate_lvar(call.get_type())
+            self.register_local_var_direct(lvar)
+            blk = BlockExprNode()
+            blk.append(
+                BinaryNode(
+                    NodeKind.ASSIGN,
+                    LVarNode(lvar),
+                    call
+                )
+            )
+            blk.append(LVarNode(lvar))
+            return blk
 
         else:
             # local variable
