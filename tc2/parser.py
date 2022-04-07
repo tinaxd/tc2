@@ -299,6 +299,8 @@ class BinaryNode(TypedNode):
                     multiplier = 4
                 elif ptr_type.kind == TypeKind.PTR:
                     multiplier = 8
+                elif ptr_type.kind == TypeKind.CHAR:
+                    multiplier = 1
                 else:
                     raise NotImplementedError()
                 g.asm(f'imul {num_reg}, {multiplier}')
@@ -586,6 +588,13 @@ def tokenize(s: str) -> List[Token]:
         if ch == "'":
             p += 1
             lit = s[p]
+            if lit == '\\':
+                p += 1
+                lit2 = s[p]
+                if lit2 == '0':
+                    lit = '\0'
+                else:
+                    raise NotImplementedError()
             p += 1
             if s[p] != "'":
                 raise TokenizeError("error reading char literal")

@@ -359,3 +359,35 @@ class CodeGenTest(unittest.TestCase):
 
     def test_char_literal(self):
         self.assertCompileExitCode("int main(){char i; i='a'; return i;}", 97)
+
+    def test_char_array(self):
+        self.assertCompileExitCode("""
+        int main(){
+            char a[3];
+            a[0]='H';
+            a[1]='i';
+            a[2]='\\0';
+            return a[1];
+        }
+        """, 105)
+
+    def test_char_array_b(self):
+        self.assertCompileExitCode("""
+        int main(){
+            char a[3];
+            a[0]='H';
+            a[1]='i';
+            a[2]='\\0';
+            return a[2];
+        }
+        """, 0)
+
+    def test_malloc(self):
+        self.assertCompileExitCode("""
+        int main(){
+            int *i;
+            i=intAlloc();
+            *i = 3;
+            return *i;
+        }
+        """, 3, libraries=['library'])
