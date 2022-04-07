@@ -130,3 +130,31 @@ class CodeGenTest(unittest.TestCase):
     def test_for6(self):
         self.assertCompileExitCode(
             "int main() {for(;;) return 100; return 50;}", 100)
+
+    def test_for7(self):
+        self.assertCompileExitCode(
+            "int main() {int i; for(i=0; i<10; i=i+1) { int a; a = i + 3; return a; }}", 3)
+
+    def test_for8(self):
+        self.assertCompileExitCode(
+            "int main() {int sum; int i; sum = 0; for(i=1; i<=5; i=i+1) sum = sum + i; return sum;}", 15)
+
+    def test_for9(self):
+        self.assertCompileExitCode(
+            "int main() {int sum; int i; sum = 0; i = 1; while (i <= 5) { sum = sum + i; i = i+1; } return sum;}", 15)
+
+    def test_for10(self):
+        self.assertCompileExitCode(
+            "int main() {int i; int a; for (i=1; i<=10; i=i+1) {a = i+1; return a;}}", 2)
+
+    def test_for11(self):
+        self.assertCompileExitCode(
+            "int main() {int i; int a; for (i=1; i<=3; i=i+1) {a = 1; if (a == 2) return a;} return 100;}", 100)
+
+    def test_for12(self):
+        self.assertCompileExitCode(
+            "int main() {int i; int a; for (i=1; i<=10; i=i+1) {a = i; if (a == 2) return a;} return 100;}", 2)
+
+    def test_for13(self):
+        self.assertCompileExitCode(
+            "int main() {int i; int a; for (i=1; i<=10; i=i+1) {a = i+1; if (a == 2) return i;} return 100;}", 1)
