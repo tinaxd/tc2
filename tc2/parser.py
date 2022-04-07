@@ -136,7 +136,7 @@ class Type:
         return t
 
     def as_ptr(self) -> 'Type':
-        assert self.kind == TypeKind.ARRAY
+        assert self.kind in [TypeKind.PTR, TypeKind.ARRAY]
         t = self.clone()
         t.kind = TypeKind.PTR
         t.array_size = 0
@@ -374,7 +374,11 @@ class BinaryNode(TypedNode):
         g.asm('push rax')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
-        raise NotImplementedError()
+        if self.kind == NodeKind.ASSIGN:
+            self._assign(g)
+            self.rhs.gen_lval(g)
+            return
+        raise NotImplementedError(f'{self.kind} {self.lhs} {self.rhs}')
 
 
 class NumNode(TypedNode):
@@ -864,19 +868,18 @@ class Parser:
         return LocalVar(name, ty)
 
     def _indirect_expr(self, node: TypedNode) -> TypedNode:
-        return node
         lvar = self._generate_lvar(node.get_type())
         self.register_local_var_direct(lvar)
-        blk = BlockExprNode()
-        blk.append(
-            BinaryNode(
-                NodeKind.ASSIGN,
-                LVarNode(lvar),
-                node
-            )
-        )
-        blk.append(LVarNode(lvar))
-        return blk
+        # blk = BlockExprNode()
+        # blk.append(
+        #     BinaryNode(
+        #         NodeKind.ASSIGN,
+        #         LVarNode(lvar),
+        #         node
+        #     )
+        # )
+        # blk.append(LVarNode(lvar))
+        return BinaryNode(NodeKind.ASSIGN, LVarNode(lvar), node)
 
     @property
     def current(self) -> Token:
@@ -886,7 +889,10 @@ class Parser:
         return self.local_vars
 
     def find_local_var_in_func(self, name: str) -> Optional[LocalVar]:
-        vars = self.local_vars[self.current_function]
+        try:
+            vars = self.local_vars[self.current_function]
+        except KeyError:
+            return None
         for var in vars:
             if var.name == name:
                 return var
@@ -943,11 +949,17 @@ class Parser:
         return val
 
     def register_local_var(self, name: str, ty: Type) -> None:
-        vars_in_func = self.local_vars[self.current_function]
+        try:
+            vars_in_func = self.local_vars[self.current_function]
+        except KeyError:
+            return
         vars_in_func.append(LocalVar(name, ty))
 
     def register_local_var_direct(self, lvar: LocalVar) -> None:
-        vars_in_func = self.local_vars[self.current_function]
+        try:
+            vars_in_func = self.local_vars[self.current_function]
+        except KeyError:
+            return
         vars_in_func.append(lvar)
 
     def program(self) -> List[Node]:

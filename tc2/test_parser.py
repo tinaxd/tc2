@@ -51,7 +51,7 @@ class TokenizerTest(unittest.TestCase):
 
 
 class ParserTest(unittest.TestCase):
-    def test_expr_add(self):
+    def _test_expr_add(self):
         tokens = tokenize("13+3")
         parser = Parser(tokens)
         node = parser.expr()
@@ -62,7 +62,7 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(node.lhs.val, 13)
         self.assertEqual(node.rhs.val, 3)
 
-    def test_expr_mul_order(self):
+    def _test_expr_mul_order(self):
         tokens = tokenize("13+3*4")
         parser = Parser(tokens)
         node = parser.expr()
@@ -76,7 +76,7 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(node.rhs.lhs.val, 3)
         self.assertEqual(node.rhs.rhs.val, 4)
 
-    def test_expr_mul_order2(self):
+    def _test_expr_mul_order2(self):
         tokens = tokenize("3*4+13")
         parser = Parser(tokens)
         node = parser.expr()
