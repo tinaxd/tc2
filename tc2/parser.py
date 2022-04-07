@@ -222,8 +222,21 @@ class BinaryNode(TypedNode):
         self.rhs = rhs
 
     def get_type(self) -> Type:
-        # FIXME
-        return self.lhs.get_type()
+        addition = self.kind in [NodeKind.ADD, NodeKind.SUB]
+        if addition:
+            lhs_ptr = self.lhs.get_type().kind == TypeKind.PTR
+            rhs_ptr = self.rhs.get_type().kind == TypeKind.PTR
+            if lhs_ptr and not rhs_ptr:
+                return self.lhs.get_type()
+            elif rhs_ptr and not lhs_ptr:
+                return self.rhs.get_type()
+            elif lhs_ptr and rhs_ptr:
+                raise NodeTypeError('invalid arithmetic: pointer + pointer')
+            else:
+                # FIXME
+                return self.lhs.get_type()
+        else:
+            return self.lhs.get_type()
 
     def gen(self, g: ICodeGenerator) -> None:
         if self.kind == NodeKind.ASSIGN:
@@ -248,6 +261,32 @@ class BinaryNode(TypedNode):
         self.rhs.gen(g)
         g.asm('pop rdi')
         g.asm('pop rax')
+
+        # pointer arithmetic
+        def _pointer_check():
+            if self.kind in [NodeKind.ADD, NodeKind.SUB]:
+                lhs_ptr = self.lhs.get_type().kind == TypeKind.PTR
+                rhs_ptr = self.rhs.get_type().kind == TypeKind.PTR
+                if not lhs_ptr and not rhs_ptr:
+                    return
+                if lhs_ptr and not rhs_ptr:
+                    # ptr_reg = 'rax'
+                    num_reg = 'rdi'
+                    ptr_type = self.lhs.get_type().ptr_to
+                elif rhs_ptr and not lhs_ptr:
+                    # ptr_reg = 'rdi'
+                    num_reg = 'rax'
+                    ptr_type = self.rhs.get_type().ptr_to
+                multiplier = None
+                if ptr_type.kind == TypeKind.INT:
+                    multiplier = 4
+                elif ptr_type.kind == TypeKind.PTR:
+                    multiplier = 8
+                else:
+                    raise NotImplementedError()
+                g.asm(f'imul {num_reg}, {multiplier}')
+        _pointer_check()
+
         if self.kind == NodeKind.ADD:
             g.asm('add rax, rdi')
         elif self.kind == NodeKind.SUB:
