@@ -2,3 +2,4 @@
 /tmp
 /tmp.s
 __pycache__/
+*.o

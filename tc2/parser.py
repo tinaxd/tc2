@@ -200,7 +200,10 @@ class UnaryNode(TypedNode):
             raise NotImplementedError()
 
     def gen_lval(self, g: ICodeGenerator) -> None:
-        raise NotImplementedError()
+        if self.kind == NodeKind.DEREF:
+            self.node.gen(g)
+        else:
+            raise NotImplementedError()
 
     def get_type(self) -> Type:
         ty = self.node.get_type()

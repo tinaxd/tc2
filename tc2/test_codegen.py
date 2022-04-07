@@ -31,19 +31,22 @@ class CodeGenTest(unittest.TestCase):
         gen_all(self.gen, nodes)
         return self.gen.as_str()
 
-    def assertExitCode(self, asm: str, exit_code: int) -> None:
+    def assertExitCode(self, asm: str, exit_code: int, libraries: List[str] = []) -> None:
         with open('tmp.s', 'w') as f:
             f.write(asm)
-        proc = subprocess.run(['cc', '-o', 'tmp', 'tmp.s'])
+        cmd = ['cc', '-o', 'tmp', 'tmp.s']
+        for lib in libraries:
+            cmd.append(f'{lib}.o')
+        proc = subprocess.run(cmd)
         if proc.returncode == 0:
             exe = subprocess.run(['./tmp'])
             self.assertEqual(exe.returncode, exit_code, msg=asm)
         else:
             self.fail('failed to link generated assembly')
 
-    def assertCompileExitCode(self, source: str, exit_code: int) -> None:
+    def assertCompileExitCode(self, source: str, exit_code: int, libraries: List[str] = []) -> None:
         asm = self.compile(source)
-        self.assertExitCode(asm, exit_code)
+        self.assertExitCode(asm, exit_code, libraries=libraries)
 
     def test_main_simple(self):
         self.assertCompileExitCode('int main() { return 42;}', 42)
@@ -195,3 +198,19 @@ class CodeGenTest(unittest.TestCase):
     def test_ref_deref(self):
         self.assertCompileExitCode(
             "int main(){int a; int *b; int c;a=3; b=&a; c=*b;return c;}", 3)
+
+    def test_ref1(self):
+        self.assertCompileExitCode(
+            "int main() {int x; int *y; x=3; y=&x; return *y;}", 3)
+
+    def test_ref2(self):
+        self.assertCompileExitCode(
+            "int main() {int x; int *y; y = &x; *y = 3; return x;}", 3)
+
+    def test_ref3(self):
+        self.assertCompileExitCode(
+            "int main() {int *p; alloc4(&p, 1, 2, 4, 8); int *q; q = p+2; return *q;}", 4, libraries=['library'])
+
+    def test_ref4(self):
+        self.assertCompileExitCode(
+            "int main() {int *p; alloc4(&p, 1, 2, 4, 8); int *q; q = p+2; *q; q=q+1; return *q;}", 8, libraries=['library'])
