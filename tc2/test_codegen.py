@@ -110,25 +110,29 @@ class CodeGenTest(unittest.TestCase):
         self.assertCompileExitCode(
             'int main(){while(0) return 3; return 2;}', 2)
 
+    def test_for0(self):
+        self.assertCompileExitCode(
+            "int main() {int i; for(i=0; i<6; i=i+1) {} return 4;}", 4)
+
     def test_for1(self):
         self.assertCompileExitCode(
-            "int main() {int i; for(i=0; i<6; i=i+1) i=i; 4;}", 4)
+            "int main() {int i; for(i=0; i<6; i=i+1) i=i; return 4;}", 4)
 
     def test_for2(self):
         self.assertCompileExitCode(
-            "int main() {int i; for(i=0; i<6; i=i+1) if(i == 3) return i; 4;}", 3)
+            "int main() {int i; for(i=0; i<6; i=i+1) if(i == 3) return i; return 4;}", 3)
 
     def test_for3(self):
         self.assertCompileExitCode(
-            "int main() {int i; for(i=0; i<6; i=i+1) if(i==5) return 100; i;}", 100)
+            "int main() {int i; for(i=0; i<6; i=i+1) if(i==5) return 100; return i;}", 100)
 
     def test_for4(self):
         self.assertCompileExitCode(
-            "int main() {int i; for(i=0; i<6; i=i+1) if(i==6) return 100; 7;}", 7)
+            "int main() {int i; for(i=0; i<6; i=i+1) if(i==6) return 100; return 7;}", 7)
 
     def test_for5(self):
         self.assertCompileExitCode(
-            "int main() {int i; for(i=0; i<6; ) if((i=i+1) == 3) return i; 4;}", 3)
+            "int main() {int i; for(i=0; i<6; ) if((i=i+1) == 3) return i; return 4;}", 3)
 
     def test_for6(self):
         self.assertCompileExitCode(
@@ -145,6 +149,15 @@ class CodeGenTest(unittest.TestCase):
     def test_for8(self):
         self.assertCompileExitCode(
             "int main() {int sum; int i; sum = 0; for(i=1; i<=5; i=i+1) sum = sum + i; return sum;}", 15)
+
+    def test_for8_b(self):
+        self.assertCompileExitCode(
+            "int main() {int sum; int i; sum = 0; for(i=1; i<=5; i=i+1) {sum = sum + i;} return sum;}", 15)
+
+    def test_for8_c(self):
+        self.assertCompileExitCode(
+            "int main(){int i; int j; for(i=1;i<=5;i=i+1) j=i+1; return j;}", 6
+        )
 
     def test_for9(self):
         self.assertCompileExitCode(
@@ -213,7 +226,7 @@ class CodeGenTest(unittest.TestCase):
 
     def test_ref4(self):
         self.assertCompileExitCode(
-            "int main() {int *p; alloc4(&p, 1, 2, 4, 8); int *q; q = p+2; *q; q=q+1; return *q;}", 8, libraries=['library'])
+            "int main() {int *p; alloc4(&p, 1, 2, 4, 8); int *q; q = p+2; q=q+1; return *q;}", 8, libraries=['library'])
 
     def test_fundef(self):
         self.assertCompileExitCode(

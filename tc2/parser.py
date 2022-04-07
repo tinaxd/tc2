@@ -3,10 +3,6 @@ from typing import Dict, List, NoReturn, Optional, Sequence
 from enum import Enum
 from abc import ABCMeta, abstractmethod
 
-import sys
-
-from numpy import isin
-
 
 class ParserError(Exception):
     def __init__(self, msg: str) -> None:
@@ -108,6 +104,9 @@ class ICodeGenerator(metaclass=ABCMeta):
     @abstractmethod
     def generate_label(self) -> str: ...
 
+    @abstractmethod
+    def comment(self, comment: str) -> None: ...
+
 
 class GenError(Exception):
     def __init__(self, msg: str) -> None:
@@ -163,6 +162,9 @@ class TypedNode(GenNode):
     @abstractmethod
     def get_type(self) -> Type: ...
 
+    @abstractmethod
+    def gen_rval(self, g: ICodeGenerator) -> None: ...
+
 
 class NodeTypeError(Exception):
     def __init__(self, msg) -> None:
@@ -170,12 +172,15 @@ class NodeTypeError(Exception):
 
 
 class ReturnNode(GenNode):
-    def __init__(self, val: GenNode) -> None:
+    def __init__(self, val: TypedNode) -> None:
         super().__init__(NodeKind.RETURN)
         self.val = val
 
     def gen(self, g: ICodeGenerator) -> None:
-        self.val.gen(g)
+        g.comment('Return')
+        g.comment('    generate return value')
+        self.val.gen_rval(g)
+        g.comment('    return it')
         g.asm("pop rax")
         g.asm("mov rsp, rbp")
         g.asm("pop rbp")
@@ -202,10 +207,15 @@ class UnaryNode(TypedNode):
         self.node = node
 
     def gen(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+    def gen_rval(self, g: ICodeGenerator) -> None:
         if self.kind == NodeKind.ADDR:
+            g.comment('Take address')
             self.node.gen_lval(g)
         elif self.kind == NodeKind.DEREF:
-            self.node.gen(g)
+            g.comment('Dereference')
+            self.node.gen_rval(g)
             g.asm('pop rax')
             g.asm('mov rax, [rax]')
             g.asm('push rax')
@@ -214,7 +224,8 @@ class UnaryNode(TypedNode):
 
     def gen_lval(self, g: ICodeGenerator) -> None:
         if self.kind == NodeKind.DEREF:
-            self.node.gen(g)
+            g.comment('Dereference (lval)')
+            self.node.gen_rval(g)
         else:
             raise NotImplementedError()
 
@@ -253,29 +264,45 @@ class BinaryNode(TypedNode):
         else:
             return self.lhs.get_type()
 
+    def _assign(self, g: ICodeGenerator) -> None:
+        g.comment('    assignment lhs')
+        self.lhs.gen_lval(g)
+        g.comment('    assignment rhs')
+        self.rhs.gen_rval(g)
+
+        g.asm('pop rdi')
+        g.asm('pop rax')
+
+        g.comment('    assignment execution')
+        ty = self.lhs.get_type()
+        if ty.kind == TypeKind.INT:
+            g.asm('mov DWORD PTR [rax], edi')
+        elif ty.kind == TypeKind.PTR:
+            g.asm('mov QWORD PTR [rax], rdi')
+        elif ty.kind == TypeKind.CHAR:
+            g.asm('mov BYTE PTR [rax], dil')
+        else:
+            raise NotImplementedError()
+
     def gen(self, g: ICodeGenerator) -> None:
         if self.kind == NodeKind.ASSIGN:
-            self.lhs.gen_lval(g)
-            self.rhs.gen(g)
+            g.comment('Assign (statement)')
+            self._assign(g)
+            return
+        raise NotImplementedError()
 
-            g.asm('pop rdi')
-            g.asm('pop rax')
-
-            ty = self.lhs.get_type()
-            if ty.kind == TypeKind.INT:
-                g.asm('mov DWORD PTR [rax], edi')
-            elif ty.kind == TypeKind.PTR:
-                g.asm('mov QWORD PTR [rax], rdi')
-            elif ty.kind == TypeKind.CHAR:
-                g.asm('mov BYTE PTR [rax], dil')
-            else:
-                raise NotImplementedError()
-
+    def gen_rval(self, g: ICodeGenerator) -> None:
+        if self.kind == NodeKind.ASSIGN:
+            g.comment('Assign (expression)')
+            self._assign(g)
             g.asm('push rdi')
             return
 
-        self.lhs.gen(g)
-        self.rhs.gen(g)
+        g.comment('Binary exp')
+        g.comment('    generate lhs')
+        self.lhs.gen_rval(g)
+        g.comment('    generate rhs')
+        self.rhs.gen_rval(g)
         g.asm('pop rdi')
         g.asm('pop rax')
 
@@ -305,31 +332,40 @@ class BinaryNode(TypedNode):
                     multiplier = 1
                 else:
                     raise NotImplementedError()
+                g.comment('    prepare for pointer arithmetic')
                 g.asm(f'imul {num_reg}, {multiplier}')
         _pointer_check()
 
         if self.kind == NodeKind.ADD:
+            g.comment('    add')
             g.asm('add rax, rdi')
         elif self.kind == NodeKind.SUB:
+            g.comment('    sub')
             g.asm('sub rax, rdi')
         elif self.kind == NodeKind.MUL:
+            g.comment('    mul')
             g.asm('imul rax, rdi')
         elif self.kind == NodeKind.DIV:
+            g.comment('    div')
             g.asm('cqo')
             g.asm('idiv rdi')
         elif self.kind == NodeKind.LT:
+            g.comment('    lt')
             g.asm('cmp rax, rdi')
             g.asm('setl al')
             g.asm('movzb rax, al')
         elif self.kind == NodeKind.LE:
+            g.comment('    le')
             g.asm('cmp rax, rdi')
             g.asm('setle al')
             g.asm('movzb rax, al')
         elif self.kind == NodeKind.EQ:
+            g.comment('    eq')
             g.asm('cmp rax, rdi')
             g.asm('sete al')
             g.asm('movzb rax, al')
         elif self.kind == NodeKind.NEQ:
+            g.comment('    neq')
             g.asm('cmp rax, rdi')
             g.asm('setne al')
             g.asm('movzb rax, al')
@@ -347,6 +383,10 @@ class NumNode(TypedNode):
         self.val = val
 
     def gen(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+    def gen_rval(self, g: ICodeGenerator) -> None:
+        g.comment('Num')
         g.asm(f"push {self.val}")
 
     def gen_lval(self, g: ICodeGenerator) -> None:
@@ -365,25 +405,36 @@ class LVarNode(TypedNode):
         return self.lvar.ty
 
     def gen(self, g: ICodeGenerator) -> None:
-        self.gen_lval(g)
-        g.asm('pop rax')
+        g.comment(f'LVar {self.lvar.name} (as statement, so empty)')
+        pass
+
+    def gen_rval(self, g: ICodeGenerator) -> None:
+        g.comment(f'LVar {self.lvar.name} as rval')
+        offset = g.get_offset(self.lvar.name)
+        # self.gen_lval(g)
+        # g.asm('pop rax')
 
         ty = self.get_type()
         if ty.kind == TypeKind.INT:
-            g.asm('mov eax, DWORD PTR [rax]')
+            g.comment('    dereference it')
+            g.asm(f'mov eax, DWORD PTR [rbp-{offset}]')
         elif ty.kind == TypeKind.PTR:
-            g.asm('mov rax, QWORD PTR [rax]')
+            g.comment('    dereference it')
+            g.asm(f'mov rax, QWORD PTR [rbp-{offset}]')
         elif ty.kind == TypeKind.ARRAY:
-            # nothing to do
+            g.comment('    dereference it')
+            g.asm(f'lea rax, [rbp-{offset}]')
             pass
         elif ty.kind == TypeKind.CHAR:
-            g.asm('mov al, BYTE PTR [rax]')
+            g.comment('    dereference it')
+            g.asm(f'mov al, BYTE PTR [rbp-{offset}]')
         else:
             raise NotImplementedError()
 
         g.asm('push rax')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
+        g.comment(f'Take address of LVar {self.lvar.name}')
         g.asm('mov rax, rbp')
         offset = g.get_offset(self.lvar.name)
         g.asm(f'sub rax, {offset}')
@@ -399,8 +450,10 @@ class BlockNode(GenNode):
         self.stmts.append(stmt)
 
     def gen(self, g: ICodeGenerator) -> None:
+        g.comment('Block statement')
         for stmt in self.stmts:
             if isinstance(stmt, GenNode):
+                g.comment('    statement')
                 stmt.gen(g)
             else:
                 raise GenError(f"Non GenNode in BlockNode: {stmt}")
@@ -418,16 +471,35 @@ class BlockExprNode(TypedNode):
         self.stmts.append(stmt)
 
     def gen(self, g: ICodeGenerator) -> None:
+        g.comment('Block expression as statement')
         for stmt in self.stmts:
             if isinstance(stmt, GenNode):
+                g.comment('    statement')
                 stmt.gen(g)
             else:
                 raise GenError(f"Non GenNode in BlockNode: {stmt}")
-        # last node is always expr node
-        g.asm('pop rax')
+
+    def gen_rval(self, g: ICodeGenerator) -> None:
+        g.comment('Block expression as rval')
+        for stmt in self.stmts[:-1]:
+            if isinstance(stmt, GenNode):
+                g.comment('    statement')
+                stmt.gen(g)
+            else:
+                raise GenError(f"Non GenNode in BlockNode: {stmt}")
+        g.comment('    expression of BlockExpr')
+        self.stmts[-1].gen_rval(g)
 
     def gen_lval(self, g: ICodeGenerator) -> None:
-        raise NotImplementedError()
+        g.comment('Block expression as lval')
+        for stmt in self.stmts[:-1]:
+            if isinstance(stmt, GenNode):
+                g.comment('    statement')
+                stmt.gen(g)
+            else:
+                raise GenError(f"Non GenNode in BlockNode: {stmt}")
+        g.comment('    expression of BlockExpr')
+        self.stmts[-1].gen_lval(g)
 
     def get_type(self) -> Type:
         last = self.stmts[-1]
@@ -472,14 +544,15 @@ class DefNode(GenNode):
 
 
 class IfNode(GenNode):
-    def __init__(self, cond: GenNode, then: GenNode, els: Optional[GenNode] = None) -> None:
+    def __init__(self, cond: TypedNode, then: GenNode, els: Optional[GenNode] = None) -> None:
         super().__init__(NodeKind.IF)
         self.cond = cond
         self.then = then
         self.els = els
 
     def gen(self, g: ICodeGenerator) -> None:
-        self.cond.gen(g)
+        g.comment('IF')
+        self.cond.gen_rval(g)
         g.asm('pop rax')
         g.asm('cmp rax, 0')
         end_label = g.generate_label()
@@ -487,6 +560,7 @@ class IfNode(GenNode):
             # without else clause
             g.asm(f'je {end_label}')
             self.then.gen(g)
+            g.comment('    end label')
             g.asm(f'{end_label}:')
         else:
             # with else clause
@@ -494,8 +568,10 @@ class IfNode(GenNode):
             g.asm(f'je {else_label}')
             self.then.gen(g)
             g.asm(f'jmp {end_label}')
+            g.comment('    else label')
             g.asm(f'{else_label}:')
             self.els.gen(g)
+            g.comment('    end label')
             g.asm(f'{end_label}:')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
@@ -503,21 +579,24 @@ class IfNode(GenNode):
 
 
 class WhileNode(GenNode):
-    def __init__(self, cond: GenNode, body: GenNode) -> None:
+    def __init__(self, cond: TypedNode, body: GenNode) -> None:
         super().__init__(NodeKind.WHILE)
         self.cond = cond
         self.body = body
 
     def gen(self, g: ICodeGenerator) -> None:
+        g.comment('WHILE')
         begin_label = g.generate_label()
         end_label = g.generate_label()
+        g.comment('    begin label')
         g.asm(f'{begin_label}:')
-        self.cond.gen(g)
+        self.cond.gen_rval(g)
         g.asm('pop rax')
         g.asm('cmp rax, 0')
         g.asm(f'je {end_label}')
         self.body.gen(g)
         g.asm(f'jmp {begin_label}')
+        g.comment('    end label')
         g.asm(f'{end_label}:')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
@@ -525,7 +604,7 @@ class WhileNode(GenNode):
 
 
 class ForNode(GenNode):
-    def __init__(self, init: Optional[GenNode], cond: Optional[GenNode], step: Optional[GenNode], body: GenNode) -> None:
+    def __init__(self, init: Optional[GenNode], cond: Optional[TypedNode], step: Optional[GenNode], body: GenNode) -> None:
         super().__init__(NodeKind.FOR)
         self.init = init
         self.cond = cond
@@ -533,14 +612,18 @@ class ForNode(GenNode):
         self.body = body
 
     def gen(self, g: ICodeGenerator) -> None:
+        g.comment('FOR')
         begin_label = g.generate_label()
         end_label = g.generate_label()
         if self.init is not None:
+            g.comment('    init')
             self.init.gen(g)
+        g.comment('    begin label')
         g.asm(f'{begin_label}:')
 
+        g.comment('    cond')
         if self.cond is not None:
-            self.cond.gen(g)
+            self.cond.gen_rval(g)
         else:
             # no cond (always 1)
             g.asm('mov rax, 1')
@@ -552,10 +635,11 @@ class ForNode(GenNode):
         self.body.gen(g)
 
         if self.step is not None:
+            g.comment('    step')
             self.step.gen(g)
-            g.asm('pop rax')
 
         g.asm(f'jmp {begin_label}')
+        g.comment('    end label')
         g.asm(f'{end_label}:')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
@@ -563,20 +647,27 @@ class ForNode(GenNode):
 
 
 class FunCallNode(TypedNode):
-    def __init__(self, funcname: str, arguments: Sequence[GenNode]) -> None:
+    def __init__(self, funcname: str, arguments: Sequence[TypedNode]) -> None:
         super().__init__(NodeKind.CALL)
         self.funcname = funcname
         self.arguments = arguments
 
     def gen(self, g: ICodeGenerator) -> None:
+        g.comment('FunCall as statement')
         registers = ['rdi', 'rsi', 'rdx', 'rcx', 'r8', 'r9']
         for arg in self.arguments:
-            arg.gen(g)
+            g.comment('    argument')
+            arg.gen_rval(g)
         # pop in reverse order
         for i, arg in reversed(list(enumerate(self.arguments))):
             g.asm(f'pop {registers[i]}')
         # call
         g.asm(f'call {self.funcname}')
+
+    def gen_rval(self, g: ICodeGenerator) -> None:
+        g.comment('FunCall as rval')
+        self.gen(g)
+        g.comment('    push funcall result')
         g.asm('push rax')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
@@ -771,6 +862,21 @@ class Parser:
         name = f'#TMP#{self._random_lvar_counter}'
         self._random_lvar_counter += 1
         return LocalVar(name, ty)
+
+    def _indirect_expr(self, node: TypedNode) -> TypedNode:
+        return node
+        lvar = self._generate_lvar(node.get_type())
+        self.register_local_var_direct(lvar)
+        blk = BlockExprNode()
+        blk.append(
+            BinaryNode(
+                NodeKind.ASSIGN,
+                LVarNode(lvar),
+                node
+            )
+        )
+        blk.append(LVarNode(lvar))
+        return blk
 
     @property
     def current(self) -> Token:
@@ -983,16 +1089,19 @@ class Parser:
     def assign(self) -> TypedNode:
         node = self.equality()
         if self.consume("="):
-            node = BinaryNode(NodeKind.ASSIGN, node, self.assign())
+            node = self._indirect_expr(BinaryNode(
+                NodeKind.ASSIGN, node, self.assign()))
         return node
 
     def equality(self) -> TypedNode:
         node = self.relational()
         while True:
             if self.consume("=="):
-                node = BinaryNode(NodeKind.EQ, node, self.relational())
+                node = self._indirect_expr(BinaryNode(
+                    NodeKind.EQ, node, self.relational()))
             elif self.consume("!="):
-                node = BinaryNode(NodeKind.NEQ, node, self.relational())
+                node = self._indirect_expr(BinaryNode(
+                    NodeKind.NEQ, node, self.relational()))
             else:
                 break
         return node
@@ -1001,17 +1110,23 @@ class Parser:
         node = self.add()
         while True:
             if self.consume("<"):
-                node = BinaryNode(NodeKind.LT, node, self.add())
+                node = self._indirect_expr(
+                    BinaryNode(NodeKind.LT, node, self.add()))
             elif self.consume("<="):
-                node = BinaryNode(NodeKind.LE, node, self.add())
+                node = self._indirect_expr(
+                    BinaryNode(NodeKind.LE, node, self.add()))
             elif self.consume(">"):
-                node = BinaryNode(NodeKind.LT, self.add(), node)
+                node = self._indirect_expr(
+                    BinaryNode(NodeKind.LT, self.add(), node))
             elif self.consume(">="):
-                node = BinaryNode(NodeKind.LE, self.add(), node)
+                node = self._indirect_expr(
+                    BinaryNode(NodeKind.LE, self.add(), node))
             elif self.consume("=="):
-                node = BinaryNode(NodeKind.EQ, node, self.add())
+                node = self._indirect_expr(
+                    BinaryNode(NodeKind.EQ, node, self.add()))
             elif self.consume("!="):
-                node = BinaryNode(NodeKind.NEQ, node, self.add())
+                node = self._indirect_expr(
+                    BinaryNode(NodeKind.NEQ, node, self.add()))
             else:
                 break
         return node
@@ -1021,10 +1136,10 @@ class Parser:
         while True:
             if self.consume("+"):
                 m = self.mul()
-                node = BinaryNode(NodeKind.ADD, node, m)
+                node = self._indirect_expr(BinaryNode(NodeKind.ADD, node, m))
             elif self.consume("-"):
                 m = self.mul()
-                node = BinaryNode(NodeKind.SUB, node, m)
+                node = self._indirect_expr(BinaryNode(NodeKind.SUB, node, m))
             else:
                 break
         return node
@@ -1033,9 +1148,11 @@ class Parser:
         node = self.unary()
         while True:
             if self.consume("*"):
-                node = BinaryNode(NodeKind.MUL, node, self.unary())
+                node = self._indirect_expr(BinaryNode(
+                    NodeKind.MUL, node, self.unary()))
             elif self.consume("/"):
-                node = BinaryNode(NodeKind.DIV, node, self.unary())
+                node = self._indirect_expr(BinaryNode(
+                    NodeKind.DIV, node, self.unary()))
             else:
                 break
         return node
@@ -1045,11 +1162,11 @@ class Parser:
             return self.subscript()
         if self.consume("-"):
             p = self.subscript()
-            return BinaryNode(NodeKind.SUB, NumNode(0), p)
+            return self._indirect_expr(BinaryNode(NodeKind.SUB, NumNode(0), p))
         if self.consume("*"):
-            return UnaryNode(NodeKind.DEREF, self.unary())
+            return self._indirect_expr(UnaryNode(NodeKind.DEREF, self.unary()))
         if self.consume("&"):
-            return UnaryNode(NodeKind.ADDR, self.unary())
+            return self._indirect_expr(UnaryNode(NodeKind.ADDR, self.unary()))
         if self.consume("sizeof"):
             raise NotImplementedError()
         return self.subscript()
@@ -1059,8 +1176,8 @@ class Parser:
         if self.consume("["):
             index = self.expr()
             self.expect("]")
-            add = BinaryNode(NodeKind.ADD, p, index)
-            deref = UnaryNode(NodeKind.DEREF, add)
+            add = self._indirect_expr(BinaryNode(NodeKind.ADD, p, index))
+            deref = self._indirect_expr(UnaryNode(NodeKind.DEREF, add))
             return deref
         return p
 
@@ -1093,20 +1210,7 @@ class Parser:
                 while self.consume(","):
                     arguments.append(self.expr())
                 self.consume(")")
-            call = FunCallNode(ident.string, arguments)
-
-            lvar = self._generate_lvar(call.get_type())
-            self.register_local_var_direct(lvar)
-            blk = BlockExprNode()
-            blk.append(
-                BinaryNode(
-                    NodeKind.ASSIGN,
-                    LVarNode(lvar),
-                    call
-                )
-            )
-            blk.append(LVarNode(lvar))
-            return blk
+            return self._indirect_expr(FunCallNode(ident.string, arguments))
 
         else:
             # local variable

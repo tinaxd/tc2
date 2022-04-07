@@ -75,6 +75,9 @@ class StringGenerator(ICodeGenerator):
     def asm(self, asm: str) -> None:
         self.buf.append(asm)
 
+    def comment(self, comment: str) -> None:
+        self.buf.append(f'# {comment}')
+
     def as_str(self) -> str:
         return os.linesep.join(self.buf)
 
@@ -87,6 +90,9 @@ class StringGenerator(ICodeGenerator):
 class StdoutGenerator(StringGenerator):
     def asm(self, asm: str) -> None:
         print(asm)
+
+    def comment(self, comment: str) -> None:
+        print(f'# {comment}')
 
 
 def gen_all(gen: ICodeGenerator, nodes: List[GenNode]) -> None:
