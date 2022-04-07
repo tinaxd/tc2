@@ -18,7 +18,7 @@ class CodeGenTest(unittest.TestCase):
             except FileNotFoundError:
                 pass
         rem('tmp')
-        rem('tmp.s')
+        # rem('tmp.s')
 
     def parse(self, source: str):
         tokens = tokenize(source)
@@ -345,3 +345,17 @@ class CodeGenTest(unittest.TestCase):
     def test_char_add(self):
         self.assertCompileExitCode(
             "int main(){char a; char b;a=2;b=3;int c;c=a+b;return c;}", 5)
+
+    def test_add_neg(self):
+        self.assertCompileExitCode("int main(){int i;i=-3;i=i+4;return i;}", 1)
+
+    def test_add_char_neg(self):
+        self.assertCompileExitCode(
+            "int main(){char i;int j;i=-3;j=i;j=j+4;return j;}", 1)
+
+    def test_add_char_neg2(self):
+        self.assertCompileExitCode(
+            "int main(){int i;char j;i=-3;j=i;j=j+4;return j;}", 1)
+
+    def test_char_literal(self):
+        self.assertCompileExitCode("int main(){char i; i='a'; return i;}", 97)

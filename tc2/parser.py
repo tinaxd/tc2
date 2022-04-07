@@ -1,7 +1,4 @@
-from ctypes import cast
 from dataclasses import dataclass
-from distutils.log import error
-from shutil import ExecError
 from typing import Dict, List, NoReturn, Optional, Sequence
 from enum import Enum
 from abc import ABCMeta, abstractmethod
@@ -27,7 +24,8 @@ class TokenKind(Enum):
     ELSE = 6
     WHILE = 7
     FOR = 8
-    EOF = 9
+    CHAR_LITERAL = 9
+    EOF = 10
 
 
 class Token:
@@ -585,6 +583,16 @@ def tokenize(s: str) -> List[Token]:
             p += 1
             continue
 
+        if ch == "'":
+            p += 1
+            lit = s[p]
+            p += 1
+            if s[p] != "'":
+                raise TokenizeError("error reading char literal")
+            new_token(Token(TokenKind.CHAR_LITERAL, f"'{lit}'", lit))
+            p += 1
+            continue
+
         if substr(s, p, 6) == 'return':
             new_token(Token(TokenKind.RETURN, substr(s, p, 6)))
             p += 6
@@ -692,6 +700,27 @@ class FunParameter:
 
 
 class Parser:
+    """
+    program    = definition*
+    definition = "int" ident ("(" ("int" ident ("," "int" ident)*)? ")")? "{" stmt* "}"
+    stmt       = expr ";"
+            | "return" expr ";"
+            | "if" "(" expr ")" stmt ("else" stmt)?
+            | "while" "(" expr ")" stmt
+            | "for (expr?; expr?; expr?) stmt"
+            | "{" stmt* "}"
+            | "int" "*"* ident ("[" num "]")? ";"
+    expr       = assign
+    assign     = equality ("=" assign)?
+    equality   = relational ("==" relational | "!=" relational)*
+    relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+    add        = mul ("+" mul | "-" mul)*
+    mul        = unary ("*" unary | "/" unary)*
+    unary      = ("+" | "-")? subscript | "*" unary | "&" unary | "sizeof" unary
+    subscript  = primary ("[" expr "]")?
+    primary    = num | ident ("(" (expr (", expr)*)? ")")? | "(" expr ")" | char_literal
+    """
+
     def __init__(self, tokens: List[Token]) -> None:
         self.tokens = tokens
         self.p = 0
@@ -725,6 +754,13 @@ class Parser:
             return False
         self.p += 1
         return True
+
+    def consume_kind_get(self, kind: TokenKind) -> Optional[Token]:
+        token = self.current
+        if token.kind != kind:
+            return None
+        self.p += 1
+        return token
 
     def consume_number(self) -> Optional[int]:
         if self.current.kind != TokenKind.NUM:
@@ -990,6 +1026,14 @@ class Parser:
         num = self.consume_number()
         if num is not None:
             return NumNode(num)
+
+        # character literal
+        ch = self.consume_kind_get(TokenKind.CHAR_LITERAL)
+        if ch is not None:
+            c: str = ch.val
+            if not c.isascii():
+                raise ParserError(f'char in char_literal is not ascii')
+            return NumNode(ord(c))
 
         ident = self.expect_ident()
         if self.consume("("):
