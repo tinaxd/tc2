@@ -26,6 +26,8 @@ class StringGenerator(ICodeGenerator):
             return 4
         elif ty.kind == TypeKind.ARRAY:
             return ty.array_size * self._get_type_size(ty.ptr_to)
+        elif ty.kind == TypeKind.CHAR:
+            return 1
         else:
             raise NotImplementedError()
 
@@ -36,6 +38,8 @@ class StringGenerator(ICodeGenerator):
             return 4
         elif ty.kind == TypeKind.ARRAY:
             return self._get_alignment(ty.ptr_to)
+        elif ty.kind == TypeKind.CHAR:
+            return 1
         else:
             raise NotImplementedError()
 

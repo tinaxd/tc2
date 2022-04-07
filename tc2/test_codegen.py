@@ -329,3 +329,19 @@ class CodeGenTest(unittest.TestCase):
     def test_array20(self):
         self.assertCompileExitCode(
             "int main() {int a[2]; 0[a]=1; 1[a]=2; return 0[a] + 1[a]; }", 3)
+
+    def test_char_decl(self):
+        self.assertCompileExitCode("int main(){char i; return 3;}", 3)
+
+    def test_char_array_decl(self):
+        self.assertCompileExitCode("int main(){char i[100]; return 3;}", 3)
+
+    def test_char_ptr_decl(self):
+        self.assertCompileExitCode("int main(){char *i; return 3;}", 3)
+
+    def test_char_ret(self):
+        self.assertCompileExitCode("int main(){char a;a=4;return a;}", 4)
+
+    def test_char_add(self):
+        self.assertCompileExitCode(
+            "int main(){char a; char b;a=2;b=3;int c;c=a+b;return c;}", 5)

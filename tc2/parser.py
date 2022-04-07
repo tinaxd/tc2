@@ -1,5 +1,6 @@
 from ctypes import cast
 from dataclasses import dataclass
+from distutils.log import error
 from shutil import ExecError
 from typing import Dict, List, NoReturn, Optional, Sequence
 from enum import Enum
@@ -117,6 +118,7 @@ class TypeKind(Enum):
     INT = 1
     PTR = 2
     ARRAY = 3
+    CHAR = 4
 
 
 class Type:
@@ -138,6 +140,7 @@ class Type:
         assert self.kind == TypeKind.ARRAY
         t = self.clone()
         t.kind = TypeKind.PTR
+        t.array_size = 0
         return t
 
 
@@ -263,6 +266,8 @@ class BinaryNode(TypedNode):
                 g.asm('mov DWORD PTR [rax], edi')
             elif ty.kind == TypeKind.PTR:
                 g.asm('mov QWORD PTR [rax], rdi')
+            elif ty.kind == TypeKind.CHAR:
+                g.asm('mov BYTE PTR [rax], dil')
             else:
                 raise NotImplementedError()
 
@@ -369,6 +374,8 @@ class LVarNode(TypedNode):
         elif ty.kind == TypeKind.ARRAY:
             # nothing to do
             pass
+        elif ty.kind == TypeKind.CHAR:
+            g.asm('mov al, BYTE PTR [rax]')
         else:
             raise NotImplementedError()
 
@@ -622,6 +629,11 @@ def tokenize(s: str) -> List[Token]:
             p += 3
             continue
 
+        if keyword('char'):
+            new_token(Token(TokenKind.RESERVED, substr(s, p, 4)))
+            p += 4
+            continue
+
         # integer
         if ch.isdigit():
             fch = ch
@@ -753,8 +765,30 @@ class Parser:
             code.append(self.definition())
         return code
 
+    def _consume_type(self) -> Optional[Type]:
+        base: Type = None
+        if self.consume("int"):
+            base = Type(TypeKind.INT)
+        elif self.consume("char"):
+            base = Type(TypeKind.CHAR)
+        else:
+            return None
+
+        ty = base
+        while self.consume("*"):
+            ty = Type(TypeKind.PTR, ty)
+            break
+
+        return ty
+
+    def _expect_type(self) -> Type:
+        ty = self._consume_type()
+        if ty is None:
+            error_at(self.current.string, 'not a type')
+        return ty
+
     def definition(self) -> Node:
-        self.expect("int")
+        def_ty = self._expect_type()
         ident = self.expect_ident()
         self.current_function = ident.string
 
@@ -763,18 +797,18 @@ class Parser:
         params: List[FunParameter] = []
         if not self.consume(")"):
             # params exist
-            self.expect("int")
+            ty = self._expect_type()
             id = self.expect_ident()
-            ty = Type(TypeKind.INT)
             params.append(FunParameter(id.string, ty))
             self.register_local_var(id.string, ty)
+            del ty
+            del id
             while True:
                 if self.consume(","):
-                    self.expect("int")
+                    ty1 = self._expect_type()
                     id1 = self.expect_ident()
-                    ty = Type(TypeKind.INT)
-                    params.append(FunParameter(id1.string, ty))
-                    self.register_local_var(id1.string, ty)
+                    params.append(FunParameter(id1.string, ty1))
+                    self.register_local_var(id1.string, ty1)
                 else:
                     break
             self.expect(")")
@@ -794,12 +828,8 @@ class Parser:
             node = self.expr()
             self.expect(";")
             return ReturnNode(node)
-        elif self.consume("int"):
-            ty = Type(TypeKind.INT)
-
-            while self.consume("*"):
-                ty = Type(TypeKind.PTR, ty)
-
+        ty = self._consume_type()
+        if ty is not None:
             tok = self.expect_ident()
 
             # array check
