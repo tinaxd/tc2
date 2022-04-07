@@ -1,5 +1,5 @@
 import unittest
-from .parser import BinaryNode, NodeKind, NumNode, Parser, tokenize, TokenKind, Token
+from tc2.parser import BinaryNode, NodeKind, NumNode, Parser, tokenize, TokenKind, Token
 TK = TokenKind
 
 

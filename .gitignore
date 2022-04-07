@@ -1,3 +1,4 @@
 .mypy_cache/
 /tmp
 /tmp.s
+__pycache__/

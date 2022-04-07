@@ -1,0 +1,9 @@
+{
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./tc2"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true
+}
