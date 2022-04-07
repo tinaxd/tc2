@@ -133,7 +133,11 @@ class CodeGenTest(unittest.TestCase):
 
     def test_for7(self):
         self.assertCompileExitCode(
-            "int main() {int i; for(i=0; i<10; i=i+1) { int a; a = i + 3; return a; }}", 3)
+            "int main() {int i; for(i=0; i<10; i=i+1) { int a; a = i + 3; return a; } return 10;}", 3)
+
+    def test_for7_a(self):
+        self.assertCompileExitCode(
+            "int main() {int i; for(i=1; i<10; i=i+1) { int a; a = i + 3; return a; } return 10;}", 4)
 
     def test_for8(self):
         self.assertCompileExitCode(
@@ -147,6 +151,26 @@ class CodeGenTest(unittest.TestCase):
         self.assertCompileExitCode(
             "int main() {int i; int a; for (i=1; i<=10; i=i+1) {a = i+1; return a;}}", 2)
 
+    def test_for10_a(self):
+        self.assertCompileExitCode(
+            "int main() {int i; int a; for (i=1; i<=10; i=i+1) {a = i+1; return 2;}}", 2)
+
+    def test_for10_b(self):
+        self.assertCompileExitCode(
+            "int main() {int i; int a; for (i=1; i<=10; i=i+1) {a = i+1; return 2;} return 2;}", 2)
+
+    def test_for10_c(self):
+        self.assertCompileExitCode(
+            "int main() {int i; int a; for (i=1; i<=10; i=i+1) {return 2;}}", 2)
+
+    def test_for10_d(self):
+        self.assertCompileExitCode(
+            "int main() {int i; for (i=1; i<=10; i=i+1) {return 2;} return 10;}", 2)
+
+    def test_for10_e(self):
+        self.assertCompileExitCode(
+            "int main() {int i; for (i=1; i<10; i=i+1) {return 2;} return 10;}", 2)
+
     def test_for11(self):
         self.assertCompileExitCode(
             "int main() {int i; int a; for (i=1; i<=3; i=i+1) {a = 1; if (a == 2) return a;} return 100;}", 100)
@@ -158,3 +182,12 @@ class CodeGenTest(unittest.TestCase):
     def test_for13(self):
         self.assertCompileExitCode(
             "int main() {int i; int a; for (i=1; i<=10; i=i+1) {a = i+1; if (a == 2) return i;} return 100;}", 1)
+
+    def test_for14(self):
+        self.assertCompileExitCode(
+            "int main() {int i; int a; for(i=0;i<=1;i=i+1) {a=i;} return a;}", 1
+        )
+
+    def test_addadd(self):
+        self.assertCompileExitCode(
+            "int main(){int i;i=0;i=i+1;i=i+1;i=i+1; return i;}", 3)

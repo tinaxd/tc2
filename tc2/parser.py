@@ -246,9 +246,6 @@ class BinaryNode(TypedNode):
             g.asm('cmp rax, rdi')
             g.asm('setle al')
             g.asm('movzb rax, al')
-            g.asm('cmp rax, rdi')
-            g.asm('sete al')
-            g.asm('movzb rax, al')
         elif self.kind == NodeKind.EQ:
             g.asm('cmp rax, rdi')
             g.asm('sete al')
@@ -711,6 +708,12 @@ class Parser:
 
             nf = ForNode(n1, n2, n3, n4)
             return nf
+        elif self.consume("{"):
+            block = BlockNode()
+            while True:
+                if self.consume("}"):
+                    return block
+                block.append(self.stmt())
         else:
             node = self.expr()
             self.expect(";")
