@@ -191,3 +191,7 @@ class CodeGenTest(unittest.TestCase):
     def test_addadd(self):
         self.assertCompileExitCode(
             "int main(){int i;i=0;i=i+1;i=i+1;i=i+1; return i;}", 3)
+
+    def test_ref_deref(self):
+        self.assertCompileExitCode(
+            "int main(){int a; int *b; int c;a=3; b=&a; c=*b;return c;}", 3)

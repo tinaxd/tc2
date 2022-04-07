@@ -189,7 +189,15 @@ class UnaryNode(TypedNode):
         self.node = node
 
     def gen(self, g: ICodeGenerator) -> None:
-        raise NotImplementedError()
+        if self.kind == NodeKind.ADDR:
+            self.node.gen_lval(g)
+        elif self.kind == NodeKind.DEREF:
+            self.node.gen(g)
+            g.asm('pop rax')
+            g.asm('mov rax, [rax]')
+            g.asm('push rax')
+        else:
+            raise NotImplementedError()
 
     def gen_lval(self, g: ICodeGenerator) -> None:
         raise NotImplementedError()
@@ -221,7 +229,15 @@ class BinaryNode(TypedNode):
 
             g.asm('pop rdi')
             g.asm('pop rax')
-            g.asm('mov DWORD PTR [rax], edi')
+
+            ty = self.lhs.get_type()
+            if ty.kind == TypeKind.INT:
+                g.asm('mov DWORD PTR [rax], edi')
+            elif ty.kind == TypeKind.PTR:
+                g.asm('mov QWORD PTR [rax], rdi')
+            else:
+                raise NotImplementedError()
+
             g.asm('push rdi')
             return
 
@@ -288,7 +304,15 @@ class LVarNode(TypedNode):
     def gen(self, g: ICodeGenerator) -> None:
         self.gen_lval(g)
         g.asm('pop rax')
-        g.asm('mov eax, DWORD PTR [rax]')
+
+        ty = self.get_type()
+        if ty.kind == TypeKind.INT:
+            g.asm('mov eax, DWORD PTR [rax]')
+        elif ty.kind == TypeKind.PTR:
+            g.asm('mov rax, QWORD PTR [rax]')
+        else:
+            raise NotImplementedError()
+
         g.asm('push rax')
 
     def gen_lval(self, g: ICodeGenerator) -> None:
@@ -602,6 +626,14 @@ class Parser:
         self.p += 1
         return val
 
+    def expect_number(self) -> int:
+        if self.current.kind != TokenKind.NUM:
+            error_at(self.current.string,
+                     f'not a number: {self.current.string}')
+        val = self.current.val
+        self.p += 1
+        return val
+
     def register_local_var(self, name: str, ty: Type) -> None:
         vars_in_func = self.local_vars[self.current_function]
         vars_in_func.append(LocalVar(name, ty))
@@ -651,23 +683,22 @@ class Parser:
             self.expect(";")
             return ReturnNode(node)
         elif self.consume("int"):
-            stars = 0
+            ty = Type(TypeKind.INT)
+
             while self.consume("*"):
-                stars += 1
+                ty = Type(TypeKind.PTR, ty)
+
             tok = self.expect_ident()
 
             # array check
-            array_size = 0
-            is_array = False
             if self.consume("["):
-                is_array = True
-                raise NotImplementedError()
+                array_size = self.expect_number()
+                self.expect("]")
+                ty = Type(TypeKind.ARRAY, ty, array_size=array_size)
 
             self.expect(";")
 
-            # type construction
-            # TODO:
-            self.register_local_var(tok.string, Type(TypeKind.INT))
+            self.register_local_var(tok.string, ty)
             return EmptyNode()
         elif self.consume_kind(TokenKind.IF):
             self.expect('(')
