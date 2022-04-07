@@ -1,7 +1,7 @@
 from ctypes import cast
 from dataclasses import dataclass
 from shutil import ExecError
-from typing import Dict, List, NoReturn, Optional
+from typing import Dict, List, NoReturn, Optional, Sequence
 from enum import Enum
 from abc import ABCMeta, abstractmethod
 
@@ -345,9 +345,10 @@ class BlockNode(GenNode):
 
 
 class DefNode(GenNode):
-    def __init__(self, funcname: str, body: BlockNode) -> None:
+    def __init__(self, funcname: str, params: List['FunParameter'], body: BlockNode) -> None:
         super().__init__(NodeKind.DEF)
         self.funcname = funcname
+        self.params = params
         self.body = body
 
     def gen(self, g: ICodeGenerator) -> None:
@@ -359,7 +360,17 @@ class DefNode(GenNode):
         offset = g.get_rsp_sub(self.funcname)
         g.asm(f'sub rsp, {offset}')
 
-        # TODO: push arguments
+        registers64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+        registers32 = ["edi", "esi", "edx", "ecx", "r8", "r9"]
+        for i, param in enumerate(self.params):
+            ty = param.ty
+            offset = g.get_offset(param.name)
+            g.asm('mov rax, rbp')
+            g.asm(f'sub rax, {offset}')
+            if ty.kind == TypeKind.INT:
+                g.asm(f'mov DWORD PTR [rax], {registers32[i]}')
+            else:
+                raise NotImplementedError('non int param')
 
         self.body.gen(g)
         g.asm('pop rax')
@@ -459,11 +470,28 @@ class ForNode(GenNode):
         raise NotImplementedError()
 
 
-class FunCallNode(GenNode):
-    def __init__(self, funcname: str, arguments: List[GenNode]) -> None:
+class FunCallNode(TypedNode):
+    def __init__(self, funcname: str, arguments: Sequence[GenNode]) -> None:
         super().__init__(NodeKind.CALL)
         self.funcname = funcname
         self.arguments = arguments
+
+    def gen(self, g: ICodeGenerator) -> None:
+        registers = ['rdi', 'rsi', 'rdx', 'rcx', 'r8', 'r9']
+        for arg in self.arguments:
+            arg.gen(g)
+        # pop in reverse order
+        for i, arg in reversed(list(enumerate(self.arguments))):
+            g.asm(f'pop {registers[i]}')
+        # call
+        g.asm(f'call {self.funcname}')
+        g.asm('push rax')
+
+    def gen_lval(self, g: ICodeGenerator) -> None:
+        raise NotImplementedError()
+
+    def get_type(self) -> Type:
+        return Type(TypeKind.INT)
 
 
 def substr(s: str, start: int, count: int) -> str:
@@ -579,6 +607,21 @@ class LocalVar:
         self.name = name
         self.ty = ty
 
+    def __str__(self) -> str:
+        return f'<LocalVar {self.ty} {self.name}>'
+
+    def __repr__(self) -> str:
+        return f'LocalVar({repr(self.ty)}, {repr(self.name)})'
+
+
+@dataclass
+class FunParameter:
+    name: str
+    ty: Type
+
+    def __str__(self) -> str:
+        return f'<FunParameter {self.ty} {self.name}>'
+
 
 class Parser:
     def __init__(self, tokens: List[Token]) -> None:
@@ -658,24 +701,27 @@ class Parser:
         self.expect("int")
         ident = self.expect_ident()
         self.current_function = ident.string
+
         self.local_vars[ident.string] = []
         self.expect("(")
-        params = []
+        params: List[FunParameter] = []
         if not self.consume(")"):
             # params exist
             self.expect("int")
             id = self.expect_ident()
-            params.append(id)
+            ty = Type(TypeKind.INT)
+            params.append(FunParameter(id.string, ty))
+            self.register_local_var(id.string, ty)
             while True:
                 if self.consume(","):
                     self.expect("int")
                     id1 = self.expect_ident()
-                    params.append(id1)
+                    ty = Type(TypeKind.INT)
+                    params.append(FunParameter(id1.string, ty))
+                    self.register_local_var(id1.string, ty)
                 else:
                     break
             self.expect(")")
-
-        # TODO: register params as lvars
 
         self.consume("{")
         body = BlockNode()
@@ -684,7 +730,7 @@ class Parser:
                 break
             body.append(self.stmt())
 
-        node = DefNode(ident.string, body)
+        node = DefNode(ident.string, params, body)
         return node
 
     def stmt(self) -> GenNode:
@@ -867,12 +913,17 @@ class Parser:
                 arguments.append(self.expr())
                 while self.consume(","):
                     arguments.append(self.expr())
+                self.consume(")")
             return FunCallNode(ident.string, arguments)
 
         else:
             # local variable
             lvar = self.find_local_var_in_func(ident.string)
             if lvar is None:
+                try:
+                    vars = self.local_vars[self.current_function]
+                except KeyError:
+                    vars = []
                 raise ParserError(
-                    f"local variable {ident.string} is not defined.")
+                    f"local variable {ident.string} is not defined. available variables: {vars}")
             return LVarNode(lvar)

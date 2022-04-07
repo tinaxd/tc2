@@ -42,7 +42,7 @@ class CodeGenTest(unittest.TestCase):
             exe = subprocess.run(['./tmp'])
             self.assertEqual(exe.returncode, exit_code, msg=asm)
         else:
-            self.fail('failed to link generated assembly')
+            self.fail(f'failed to link generated assembly, asm: {asm}')
 
     def assertCompileExitCode(self, source: str, exit_code: int, libraries: List[str] = []) -> None:
         asm = self.compile(source)
