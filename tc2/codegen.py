@@ -6,11 +6,6 @@ if TYPE_CHECKING:
     from .parser import Type
 
 
-class StdoutGenerator(ICodeGenerator):
-    def asm(self, asm: str) -> None:
-        print(asm)
-
-
 class StringGenerator(ICodeGenerator):
     def __init__(self, lvars: Dict[str, List[LocalVar]] = None) -> None:
         super().__init__()
@@ -89,6 +84,11 @@ class StringGenerator(ICodeGenerator):
         return s
 
 
+class StdoutGenerator(StringGenerator):
+    def asm(self, asm: str) -> None:
+        print(asm)
+
+
 def gen_all(gen: ICodeGenerator, nodes: List[GenNode]) -> None:
     gen.asm('.intel_syntax noprefix')
     gen.asm('.globl main')
@@ -98,3 +98,17 @@ def gen_all(gen: ICodeGenerator, nodes: List[GenNode]) -> None:
         gen.asm('pop rbp')
         gen.asm('ret')
     gen.asm('')
+
+
+if __name__ == '__main__':
+    import sys
+    from .parser import tokenize, Parser
+    source = sys.argv[1]
+    tokens = tokenize(source)
+    parser = Parser(tokens)
+
+    nodes = parser.program()
+    lvars = parser.get_local_vars()
+
+    compiler = StdoutGenerator(lvars)
+    gen_all(compiler, nodes)
