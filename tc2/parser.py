@@ -868,6 +868,7 @@ class Parser:
         return LocalVar(name, ty)
 
     def _indirect_expr(self, node: TypedNode) -> TypedNode:
+        return node
         lvar = self._generate_lvar(node.get_type())
         self.register_local_var_direct(lvar)
         # blk = BlockExprNode()
